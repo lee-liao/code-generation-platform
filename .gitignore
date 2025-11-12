@@ -205,3 +205,10 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Allow vendored sample project assets
+!sample_project/
+!sample_project/**/dist/
+!sample_project/**/dist/**
+!sample_project/**/downloads/
+!sample_project/**/downloads/**
