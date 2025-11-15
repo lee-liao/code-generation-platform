@@ -22,7 +22,7 @@ A GitHub App that automates repository management tasks including creating repos
 1. Clone the repository:
    ```bash
    git clone <repository-url>
-   cd github-app-for-cgp
+   cd code-generation-platform
    ```
 
 2. Install dependencies:

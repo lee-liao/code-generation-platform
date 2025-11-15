@@ -212,3 +212,18 @@ __marimo__/
 !sample_project/**/dist/**
 !sample_project/**/downloads/
 !sample_project/**/downloads/**
+
+# Environment variables
+.env
+
+# Private key files
+*.pem
+
+# Wucai directory
+.wucai/
+
+# Node modules
+node_modules/
+
+# Claude Code 
+CLAUDE.md
