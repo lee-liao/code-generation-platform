@@ -18,20 +18,24 @@ jest.mock('@octokit/auth-app', () => ({
 jest.mock('@octokit/rest', () => {
   const mockOctokit = {
     repos: {
-      createInOrg: jest.fn(() => Promise.resolve({ data: { html_url: 'https://github.com/test-org/test-repo' } })),
-      getBranch: jest.fn(() => Promise.resolve({ data: { commit: { sha: 'test-sha' } } })),
+      createForAuthenticatedUser: jest.fn(() => Promise.resolve({ data: { html_url: 'https://github.com/test-user/test-repo', id: 123, name: 'test-repo', full_name: 'test-user/test-repo' } })),
+      delete: jest.fn(() => Promise.resolve({ status: 204 })),
+      get: jest.fn(() => Promise.resolve({ data: { name: 'test-repo', full_name: 'test-user/test-repo', description: 'Test repo', default_branch: 'main' } })),
+      getContent: jest.fn(() => Promise.resolve({ data: { sha: 'test-sha' } })),
       createOrUpdateFileContents: jest.fn(() => Promise.resolve({ data: { content: { sha: 'test-file-sha' } } })),
+      listBranches: jest.fn(() => Promise.resolve({ data: [{ name: 'main' }, { name: 'feature-branch' }] })),
+      getBranch: jest.fn(() => Promise.resolve({ data: { name: 'main', commit: { sha: 'test-sha' } } })),
     },
     git: {
       getRef: jest.fn(() => Promise.resolve({ data: { object: { sha: 'test-sha' } } })),
-      createRef: jest.fn(() => Promise.resolve({ data: { ref: 'refs/heads/test-branch' } })),
+      createRef: jest.fn(() => Promise.resolve({ data: { ref: 'refs/heads/test-branch', object: { sha: 'test-sha' } } })),
       createBlob: jest.fn(() => Promise.resolve({ data: { sha: 'test-blob-sha' } })),
       createTree: jest.fn(() => Promise.resolve({ data: { sha: 'test-tree-sha' } })),
       createCommit: jest.fn(() => Promise.resolve({ data: { sha: 'test-commit-sha' } })),
       updateRef: jest.fn(() => Promise.resolve({ data: { ref: 'refs/heads/test-branch' } })),
     },
     pulls: {
-      create: jest.fn(() => Promise.resolve({ data: { html_url: 'https://github.com/test-org/test-repo/pull/1' } })),
+      create: jest.fn(() => Promise.resolve({ data: { html_url: 'https://github.com/test-user/test-repo/pull/1', id: 1, title: 'Test PR' } })),
     }
   };
 
@@ -55,7 +59,7 @@ describe('GitHubApp', () => {
 
   test('should initialize without errors', () => {
     expect(githubApp).toBeDefined();
-    expect(githubApp.auth).toBeDefined();
+    expect(githubApp.appAuth).toBeDefined();
     expect(githubApp.octokit).toBeDefined();
   });
 

@@ -4,7 +4,7 @@ const { Octokit } = require('@octokit/rest');
 class GitHubApp {
   constructor() {
     // Initialize GitHub App authentication
-    this.auth = createAppAuth({
+    this.appAuth = createAppAuth({
       appId: process.env.GITHUB_APP_ID,
       privateKey: require('fs').readFileSync(process.env.GITHUB_PRIVATE_KEY_PATH, 'utf-8'),
     });
@@ -15,7 +15,7 @@ class GitHubApp {
 
   // Get authenticated GitHub client for a specific installation
   async getGitHubClient(installationId) {
-    const auth = await this.auth({
+    const auth = await this.appAuth({
       type: "installation",
       installationId: installationId,
     });
@@ -25,24 +25,30 @@ class GitHubApp {
     });
   }
 
-  // Create a new repository
+  // Create a new repository using personal access token
   async createRepository(owner, name, description = '', isPrivate = false) {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
-
-    try {
-      const response = await github.repos.createInOrg({
-        org: owner,
-        name: name,
-        description: description,
-        private: isPrivate,
+    // Check if personal access token is available for repository creation
+    if (process.env.GITHUB_PERSONAL_ACCESS_TOKEN) {
+      const github = new Octokit({
+        auth: process.env.GITHUB_PERSONAL_ACCESS_TOKEN,
       });
 
-      console.log(`Repository created: ${response.data.html_url}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error creating repository:', error.message);
-      throw error;
+      try {
+        const response = await github.repos.createForAuthenticatedUser({
+          name: name,
+          description: description,
+          private: isPrivate,
+        });
+
+        console.log(`Repository created: ${response.data.html_url}`);
+        return response.data;
+      } catch (error) {
+        console.error('Error creating repository with personal access token:', error.message);
+        throw error;
+      }
+    } else {
+      console.error('GITHUB_PERSONAL_ACCESS_TOKEN is not set in environment variables');
+      throw new Error('GITHUB_PERSONAL_ACCESS_TOKEN is required for repository creation');
     }
   }
 
@@ -53,18 +59,62 @@ class GitHubApp {
 
     try {
       // Get the reference of the source branch
-      const { data: sourceRef } = await github.git.getRef({
-        owner,
-        repo,
-        ref: `heads/${sourceBranch}`,
-      });
+      let sourceRef;
+      try {
+        sourceRef = await github.git.getRef({
+          owner,
+          repo,
+          ref: `heads/${sourceBranch}`,
+        });
+      } catch (refError) {
+        if (refError.message.includes('Git Repository is empty')) {
+          // If the repository is empty, we need to handle this special case
+          console.log(`Repository is empty, initializing with a default file first...`);
+          
+          // Add a default file to initialize the repository
+          const defaultFileResponse = await this.addFile(
+            owner,
+            repo,
+            'README.md',
+            `# ${repo}\n\nInitial commit to initialize the repository.`,
+            sourceBranch,
+            'Initial commit: Add README'
+          );
+          
+          // Now try to get the reference again
+          sourceRef = await github.git.getRef({
+            owner,
+            repo,
+            ref: `heads/${sourceBranch}`,
+          });
+        } else {
+          // If the source branch doesn't exist, try to get the repository's default branch
+          const repoInfo = await github.repos.get({
+            owner,
+            repo,
+          });
+
+          if (repoInfo.data.default_branch !== sourceBranch) {
+            // If the source branch is not the default branch, check the default branch
+            const defaultBranchRef = await github.git.getRef({
+              owner,
+              repo,
+              ref: `heads/${repoInfo.data.default_branch}`,
+            });
+            sourceRef = defaultBranchRef;
+            console.log(`Using default branch '${repoInfo.data.default_branch}' as source instead of '${sourceBranch}'`);
+          } else {
+            throw refError;
+          }
+        }
+      }
 
       // Create a new branch
       const response = await github.git.createRef({
         owner,
         repo,
         ref: `refs/heads/${branchName}`,
-        sha: sourceRef.object.sha,
+        sha: sourceRef.data.object.sha,
       });
 
       console.log(`Branch created: ${branchName}`);
@@ -217,6 +267,176 @@ class GitHubApp {
       return response.data;
     } catch (error) {
       console.error('Error creating pull request:', error.message);
+      throw error;
+    }
+  }
+  
+  // Get installation information
+  async getInstallationInfo() {
+    // For getting installation info, we need app-level authentication, not installation-level
+    const auth = await this.appAuth({
+      type: "app",
+    });
+    
+    const github = new Octokit({
+      auth: auth.token,
+    });
+
+    try {
+      const response = await github.apps.getInstallation({
+        installation_id: process.env.GITHUB_INSTALLATION_ID
+      });
+      
+      console.log(`Installation info:`, response.data);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting installation info:', error.message);
+      throw error;
+    }
+  }
+  
+  // Get all branches from a repository (pull operation)
+  async getBranches(owner, repo) {
+    const installationId = process.env.GITHUB_INSTALLATION_ID;
+    const github = await this.getGitHubClient(installationId);
+
+    try {
+      const response = await github.repos.listBranches({
+        owner,
+        repo,
+        per_page: 100
+      });
+
+      console.log(`Retrieved ${response.data.length} branches from ${repo}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting branches:', error.message);
+      throw error;
+    }
+  }
+  
+  // Get a specific branch
+  async getBranch(owner, repo, branchName) {
+    const installationId = process.env.GITHUB_INSTALLATION_ID;
+    const github = await this.getGitHubClient(installationId);
+
+    try {
+      const response = await github.repos.getBranch({
+        owner,
+        repo,
+        branch: branchName,
+      });
+
+      console.log(`Retrieved branch: ${branchName}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting branch:', error.message);
+      throw error;
+    }
+  }
+  
+  // Get repository information
+  async getRepository(owner, repo) {
+    const installationId = process.env.GITHUB_INSTALLATION_ID;
+    const github = await this.getGitHubClient(installationId);
+
+    try {
+      const response = await github.repos.get({
+        owner,
+        repo,
+      });
+
+      console.log(`Retrieved repository info: ${repo}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting repository:', error.message);
+      throw error;
+    }
+  }
+  
+  // Delete a repository
+  async deleteRepository(owner, repo) {
+    if (process.env.GITHUB_PERSONAL_ACCESS_TOKEN) {
+      const github = new Octokit({
+        auth: process.env.GITHUB_PERSONAL_ACCESS_TOKEN,
+      });
+
+      try {
+        const response = await github.repos.delete({
+          owner,
+          repo,
+        });
+
+        console.log(`Repository deleted: ${owner}/${repo}`);
+        return response;
+      } catch (error) {
+        console.error('Error deleting repository with personal access token:', error.message);
+        throw error;
+      }
+    } else {
+      console.error('GITHUB_PERSONAL_ACCESS_TOKEN is not set in environment variables');
+      throw new Error('GITHUB_PERSONAL_ACCESS_TOKEN is required for repository deletion');
+    }
+  }
+  
+  // Get repository contents
+  async getContents(owner, repo, path = '', ref = 'main') {
+    const installationId = process.env.GITHUB_INSTALLATION_ID;
+    const github = await this.getGitHubClient(installationId);
+
+    try {
+      const response = await github.repos.getContent({
+        owner,
+        repo,
+        path,
+        ref,
+      });
+
+      console.log(`Retrieved contents for path: ${path} in ${repo}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting repository contents:', error.message);
+      throw error;
+    }
+  }
+  
+  // Compare two commits
+  async compareCommits(owner, repo, base, head) {
+    const installationId = process.env.GITHUB_INSTALLATION_ID;
+    const github = await this.getGitHubClient(installationId);
+
+    try {
+      const response = await github.repos.compareCommits({
+        owner,
+        repo,
+        base,
+        head,
+      });
+
+      console.log(`Compared commits ${base}...${head} in ${repo}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error comparing commits:', error.message);
+      throw error;
+    }
+  }
+  
+  // Get commit information
+  async getCommit(owner, repo, ref) {
+    const installationId = process.env.GITHUB_INSTALLATION_ID;
+    const github = await this.getGitHubClient(installationId);
+
+    try {
+      const response = await github.repos.getCommit({
+        owner,
+        repo,
+        ref,
+      });
+
+      console.log(`Retrieved commit info for: ${ref} in ${repo}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error getting commit info:', error.message);
       throw error;
     }
   }

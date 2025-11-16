@@ -1,1 +1,0 @@
-(window["webpackJsonp"]=window["webpackJsonp"]||[]).push([[3],{bc13:function(n,t,e){"use strict";e.r(t);var s=function(){var n=this,t=n.$createElement,e=n._self._c||t;return e("div",{staticClass:"px-10 py-5"},[n._v("\n  这里是首页\n")])},c=[],l=e("2877"),a={},u=Object(l["a"])(a,s,c,!1,null,null,null);t["default"]=u.exports}}]);

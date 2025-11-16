@@ -227,3 +227,9 @@ node_modules/
 
 # Claude Code 
 CLAUDE.md
+
+# Generated files and logs
+codebase-generation.log
+test-directory-check.js
+test-validation.js
+*.log

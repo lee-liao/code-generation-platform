@@ -1,0 +1,1233 @@
+openapi: 3.0.0
+info:
+  title: Code Generation Platform API
+  version: 1.0.0
+  description: A GitHub App API for creating repositories, branches, pulling, adding files, committing, pushing, and creating pull requests
+servers:
+  - url: http://localhost:3000
+    description: Development server
+paths:
+  /:
+    get:
+      summary: Health check endpoint
+      description: Returns a simple message to confirm the API is running
+      responses:
+        '200':
+          description: API is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: GitHub App for CGP is running!
+  /create-repo:
+    post:
+      summary: Create a new GitHub repository
+      description: Creates a new GitHub repository using a personal access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner:
+                  type: string
+                  description: Repository owner (username or organization)
+                  example: "username"
+                name:
+                  type: string
+                  description: Repository name
+                  example: "my-new-repo"
+                description:
+                  type: string
+                  description: Repository description
+                  example: "My new repository"
+                isPrivate:
+                  type: boolean
+                  description: Whether the repository should be private
+                  default: false
+                  example: false
+      responses:
+        '200':
+          description: Repository created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 123456789
+                  name:
+                    type: string
+                    example: "my-new-repo"
+                  html_url:
+                    type: string
+                    example: "https://github.com/username/my-new-repo"
+        '500':
+          description: Error creating repository
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "GITHUB_PERSONAL_ACCESS_TOKEN is required for repository creation"
+  /create-branch:
+    post:
+      summary: Create a new branch in a repository
+      description: Creates a new branch from a source branch in the specified repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner:
+                  type: string
+                  description: Repository owner (username or organization)
+                  example: "username"
+                repo:
+                  type: string
+                  description: Repository name
+                  example: "my-repo"
+                branchName:
+                  type: string
+                  description: Name of the new branch to create
+                  example: "feature/new-feature"
+                sourceBranch:
+                  type: string
+                  description: Source branch to create from
+                  default: "main"
+                  example: "main"
+      responses:
+        '200':
+          description: Branch created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ref:
+                    type: string
+                    example: "refs/heads/feature/new-feature"
+                  object:
+                    type: object
+                    properties:
+                      sha:
+                        type: string
+                        example: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+        '500':
+          description: Error creating branch
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error creating branch"
+  /add-file:
+    post:
+      summary: Add or update a file in a repository
+      description: Adds or updates a file in the specified repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner:
+                  type: string
+                  description: Repository owner (username or organization)
+                  example: "username"
+                repo:
+                  type: string
+                  description: Repository name
+                  example: "my-repo"
+                filePath:
+                  type: string
+                  description: Path to the file in the repository
+                  example: "docs/readme.md"
+                content:
+                  type: string
+                  description: Content of the file
+                  example: "# Documentation"
+                branch:
+                  type: string
+                  description: Branch to modify
+                  default: "main"
+                  example: "main"
+                commitMessage:
+                  type: string
+                  description: Commit message
+                  default: "Add file via API"
+                  example: "Add documentation file"
+      responses:
+        '200':
+          description: File added or updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: object
+                    properties:
+                      path:
+                        type: string
+                        example: "docs/readme.md"
+                      sha:
+                        type: string
+                        example: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+        '500':
+          description: Error adding file
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error adding file"
+  /create-pull-request:
+    post:
+      summary: Create a new pull request
+      description: Creates a new pull request between branches
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner:
+                  type: string
+                  description: Repository owner (username or organization)
+                  example: "username"
+                repo:
+                  type: string
+                  description: Repository name
+                  example: "my-repo"
+                title:
+                  type: string
+                  description: Title of the pull request
+                  example: "New Feature"
+                body:
+                  type: string
+                  description: Body/description of the pull request
+                  example: "This PR adds a new feature"
+                head:
+                  type: string
+                  description: Source branch (the branch with changes)
+                  example: "feature/new-feature"
+                base:
+                  type: string
+                  description: Target branch (the branch to merge into)
+                  default: "main"
+                  example: "main"
+      responses:
+        '200':
+          description: Pull request created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 12345
+                  title:
+                    type: string
+                    example: "New Feature"
+                  html_url:
+                    type: string
+                    example: "https://github.com/username/my-repo/pull/1"
+        '500':
+          description: Error creating pull request
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error creating pull request"
+  /installation-info:
+    get:
+      summary: Get GitHub App installation information
+      description: Retrieves information about the GitHub App installation
+      responses:
+        '200':
+          description: Installation information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 123456
+                  account:
+                    type: object
+                    properties:
+                      login:
+                        type: string
+                        example: "username"
+                      type:
+                        type: string
+                        example: "User"
+        '500':
+          description: Error getting installation information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error getting installation info"
+  /branches:
+    get:
+      summary: Get all branches from a repository
+      description: Retrieves all branches from the specified repository
+      parameters:
+        - in: query
+          name: owner
+          required: true
+          schema:
+            type: string
+          description: Repository owner (username or organization)
+          example: "username"
+        - in: query
+          name: repo
+          required: true
+          schema:
+            type: string
+          description: Repository name
+          example: "my-repo"
+      responses:
+        '200':
+          description: Branches retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                      example: "main"
+                    commit:
+                      type: object
+                      properties:
+                        sha:
+                          type: string
+                          example: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+        '500':
+          description: Error getting branches
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error getting branches"
+  /branch:
+    get:
+      summary: Get a specific branch from a repository
+      description: Retrieves information about a specific branch in the specified repository
+      parameters:
+        - in: query
+          name: owner
+          required: true
+          schema:
+            type: string
+          description: Repository owner (username or organization)
+          example: "username"
+        - in: query
+          name: repo
+          required: true
+          schema:
+            type: string
+          description: Repository name
+          example: "my-repo"
+        - in: query
+          name: branchName
+          required: true
+          schema:
+            type: string
+          description: Name of the branch to retrieve
+          example: "main"
+      responses:
+        '200':
+          description: Branch information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                    example: "main"
+                  commit:
+                    type: object
+                    properties:
+                      sha:
+                        type: string
+                        example: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+        '500':
+          description: Error getting branch
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error getting branch"
+  /repository:
+    get:
+      summary: Get repository information
+      description: Retrieves information about the specified repository
+      parameters:
+        - in: query
+          name: owner
+          required: true
+          schema:
+            type: string
+          description: Repository owner (username or organization)
+          example: "username"
+        - in: query
+          name: repo
+          required: true
+          schema:
+            type: string
+          description: Repository name
+          example: "my-repo"
+      responses:
+        '200':
+          description: Repository information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                    example: 123456789
+                  name:
+                    type: string
+                    example: "my-repo"
+                  full_name:
+                    type: string
+                    example: "username/my-repo"
+                  description:
+                    type: string
+                    example: "Repository description"
+                  default_branch:
+                    type: string
+                    example: "main"
+        '500':
+          description: Error getting repository
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error getting repository"
+  /commit:
+    post:
+      summary: Commit changes to a repository
+      description: Creates a commit with multiple file changes in the specified repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                owner:
+                  type: string
+                  description: Repository owner (username or organization)
+                  example: "username"
+                repo:
+                  type: string
+                  description: Repository name
+                  example: "my-repo"
+                commitMessage:
+                  type: string
+                  description: Commit message
+                  example: "Update multiple files"
+                files:
+                  type: array
+                  description: Array of file objects to commit
+                  items:
+                    type: object
+                    properties:
+                      path:
+                        type: string
+                        description: Path to the file in the repository
+                        example: "src/index.js"
+                      content:
+                        type: string
+                        description: Content of the file
+                        example: "console.log('Hello World');"
+                branch:
+                  type: string
+                  description: Branch to commit to
+                  default: "main"
+                  example: "main"
+                parentBranch:
+                  type: string
+                  description: Source branch for the commit
+                  default: "main"
+                  example: "main"
+      responses:
+        '200':
+          description: Changes committed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  commit:
+                    type: object
+                    properties:
+                      sha:
+                        type: string
+                        example: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+                  ref:
+                    type: object
+                    properties:
+                      ref:
+                        type: string
+                        example: "refs/heads/main"
+        '500':
+          description: Error committing changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error committing changes"
+  /generate-codebase:
+    post:
+      summary: Generate a new codebase from template
+      description: Creates a new repository based on a template project and applies AI modifications
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                projectFolder:
+                  type: string
+                  description: Path to the template project directory
+                  example: "D:/templates/my-project-template"
+                repoName:
+                  type: string
+                  description: Name for the new GitHub repository
+                  example: "my-new-project"
+                repoDescription:
+                  type: string
+                  description: Description for the new GitHub repository
+                  example: "A new project generated from template"
+      responses:
+        '200':
+          description: Codebase generation started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taskId:
+                    type: string
+                    description: Unique identifier for the background task
+                    example: "task_1234567890_abc123def"
+        '400':
+          description: Bad request - missing required fields
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Project folder and repository name are required"
+        '500':
+          description: Error starting codebase generation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error message describing what went wrong"
+  /task-status/{taskId}:
+    get:
+      summary: Check status of a codebase generation task
+      description: Retrieves the current status of a background codebase generation task
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the background task
+          example: "task_1234567890_abc123def"
+      responses:
+        '200':
+          description: Task status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  step:
+                    type: string
+                    description: Current step of the task
+                    example: "copying"
+                  message:
+                    type: string
+                    description: Human-readable status message
+                    example: "Copying project template..."
+                  completed:
+                    type: boolean
+                    description: Whether the task has completed
+                    example: false
+                  summary:
+                    type: string
+                    description: Summary of work performed (when completed)
+                    example: "Successfully created repository my-new-project with generated code."
+        '404':
+          description: Task not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Task not found"
+  /kill-process/{taskId}:
+    post:
+      summary: Kill a running codebase generation task process
+      description: Terminates the process associated with a background codebase generation task
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+          description: Unique identifier of the background task
+          example: "task_1234567890_abc123def"
+      responses:
+        '200':
+          description: Process terminated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Process 1234 terminated successfully"
+                  pid:
+                    type: integer
+                    example: 1234
+        '404':
+          description: Task or process not found
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Task or process not found"
+        '500':
+          description: Error terminating process
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Failed to terminate process: Process does not exist"
+  /contents:
+    get:
+      summary: Get repository contents
+      description: Retrieves the contents of a repository path
+      parameters:
+        - in: query
+          name: owner
+          required: true
+          schema:
+            type: string
+          description: Repository owner (username or organization)
+          example: "username"
+        - in: query
+          name: repo
+          required: true
+          schema:
+            type: string
+          description: Repository name
+          example: "my-repo"
+        - in: query
+          name: path
+          required: false
+          schema:
+            type: string
+          description: Path to the file or directory in the repository
+          example: ""
+        - in: query
+          name: ref
+          required: false
+          schema:
+            type: string
+          description: The name of the commit/branch/tag
+          default: "main"
+          example: "main"
+      responses:
+        '200':
+          description: Repository contents retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+        '500':
+          description: Error getting repository contents
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error getting repository contents"
+  /compare:
+    get:
+      summary: Compare two commits
+      description: Compares two commits in a repository
+      parameters:
+        - in: query
+          name: owner
+          required: true
+          schema:
+            type: string
+          description: Repository owner (username or organization)
+          example: "username"
+        - in: query
+          name: repo
+          required: true
+          schema:
+            type: string
+          description: Repository name
+          example: "my-repo"
+        - in: query
+          name: base
+          required: true
+          schema:
+            type: string
+          description: The base commit
+          example: "main"
+        - in: query
+          name: head
+          required: true
+          schema:
+            type: string
+          description: The head commit
+          example: "feature-branch"
+      responses:
+        '200':
+          description: Commits compared successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      type: object
+                  commits:
+                    type: array
+                    items:
+                      type: object
+        '500':
+          description: Error comparing commits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error comparing commits"
+  /commit-info:
+    get:
+      summary: Get commit information
+      description: Retrieves information about a specific commit
+      parameters:
+        - in: query
+          name: owner
+          required: true
+          schema:
+            type: string
+          description: Repository owner (username or organization)
+          example: "username"
+        - in: query
+          name: repo
+          required: true
+          schema:
+            type: string
+          description: Repository name
+          example: "my-repo"
+        - in: query
+          name: ref
+          required: true
+          schema:
+            type: string
+          description: The commit SHA or branch name
+          example: "main"
+      responses:
+        '200':
+          description: Commit information retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sha:
+                    type: string
+                    example: "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6q7r8s9t0"
+                  commit:
+                    type: object
+                    properties:
+                      message:
+                        type: string
+                        example: "Initial commit"
+        '500':
+          description: Error getting commit information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error getting commit information"
+  /git-init:
+    post:
+      summary: Initialize a Git repository
+      description: Initializes a Git repository in the specified directory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                directory:
+                  type: string
+                  description: Path to the directory to initialize as a Git repository
+                  example: "/path/to/project"
+                branch:
+                  type: string
+                  description: Name of the initial branch
+                  default: "main"
+                  example: "main"
+      responses:
+        '200':
+          description: Git repository initialized successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Git repository initialized in /path/to/project with branch main"
+        '400':
+          description: Bad request - missing required parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Directory is required"
+        '500':
+          description: Error initializing Git repository
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error message describing what went wrong"
+  /git-config:
+    post:
+      summary: Configure Git user information
+      description: Configures Git user email and name for the repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                directory:
+                  type: string
+                  description: Path to the Git repository directory
+                  example: "/path/to/project"
+                email:
+                  type: string
+                  description: Git user email
+                  example: "user@example.com"
+                name:
+                  type: string
+                  description: Git user name
+                  example: "John Doe"
+      responses:
+        '200':
+          description: Git user configured successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Git user configured in /path/to/project"
+        '400':
+          description: Bad request - missing required parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Directory, email, and name are required"
+        '500':
+          description: Error configuring Git user
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error message describing what went wrong"
+  /git-add:
+    post:
+      summary: Add files to Git staging
+      description: Adds files to the Git staging area
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                directory:
+                  type: string
+                  description: Path to the Git repository directory
+                  example: "/path/to/project"
+                files:
+                  type: string
+                  description: Files to add (default is all files)
+                  default: "."
+                  example: "."
+      responses:
+        '200':
+          description: Files added to staging successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Files added to staging in /path/to/project"
+        '400':
+          description: Bad request - missing required parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Directory is required"
+        '500':
+          description: Error adding files to staging
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error message describing what went wrong"
+  /git-commit:
+    post:
+      summary: Commit staged changes
+      description: Commits the staged changes to the repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                directory:
+                  type: string
+                  description: Path to the Git repository directory
+                  example: "/path/to/project"
+                message:
+                  type: string
+                  description: Commit message
+                  example: "Initial commit"
+      responses:
+        '200':
+          description: Changes committed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Changes committed in /path/to/project"
+        '400':
+          description: Bad request - missing required parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Directory and commit message are required"
+        '500':
+          description: Error committing changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error message describing what went wrong"
+  /git-remote:
+    post:
+      summary: Add Git remote
+      description: Adds a remote Git repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                directory:
+                  type: string
+                  description: Path to the Git repository directory
+                  example: "/path/to/project"
+                remoteUrl:
+                  type: string
+                  description: URL of the remote repository
+                  example: "https://github.com/user/repo.git"
+                remoteName:
+                  type: string
+                  description: Name of the remote (default: origin)
+                  default: "origin"
+                  example: "origin"
+      responses:
+        '200':
+          description: Remote added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Remote origin added to /path/to/project"
+        '400':
+          description: Bad request - missing required parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Directory and remote URL are required"
+        '500':
+          description: Error adding remote
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error message describing what went wrong"
+  /git-push:
+    post:
+      summary: Push changes to remote repository
+      description: Pushes committed changes to the remote repository
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                directory:
+                  type: string
+                  description: Path to the Git repository directory
+                  example: "/path/to/project"
+                remote:
+                  type: string
+                  description: Name of the remote (default: origin)
+                  default: "origin"
+                  example: "origin"
+                branch:
+                  type: string
+                  description: Name of the branch (default: main)
+                  default: "main"
+                  example: "main"
+      responses:
+        '200':
+          description: Changes pushed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: "Changes pushed to origin/main from /path/to/project"
+        '400':
+          description: Bad request - missing required parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Directory is required"
+        '500':
+          description: Error pushing changes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error message describing what went wrong"
+  /git-status:
+    get:
+      summary: Get Git status
+      description: Gets the current Git status of the repository
+      parameters:
+        - in: query
+          name: directory
+          required: true
+          schema:
+            type: string
+          description: Path to the Git repository directory
+          example: "/path/to/project"
+      responses:
+        '200':
+          description: Git status retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  directory:
+                    type: string
+                    example: "/path/to/project"
+                  status:
+                    type: array
+                    items:
+                      type: string
+                    example: ["A  new-file.js", "M  existing-file.js"]
+                  hasChanges:
+                    type: boolean
+                    example: true
+        '400':
+          description: Bad request - missing required parameters
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Directory is required"
+        '500':
+          description: Error getting Git status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+                    example: "Error message describing what went wrong"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

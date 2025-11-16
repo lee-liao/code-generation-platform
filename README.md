@@ -1,6 +1,54 @@
-# GitHub App for Code Generation Platform
+# Code Generation Platform
 
-A GitHub App that automates repository management tasks including creating repositories, branches, adding files, committing, pushing, and creating pull requests through the GitHub API.
+A GitHub App for creating repositories, branches, pulling, adding files, committing, pushing, and creating pull requests.
+
+## API Documentation
+
+This project uses OpenAPI Specification for interactive API documentation. After starting the server, you can access the interactive documentation at:
+
+```
+http://localhost:3000/api-docs
+```
+
+The documentation includes:
+- Interactive API endpoints you can test directly in the browser
+- Detailed request/response schemas
+- Example values for all parameters
+- Error response definitions
+
+## Testing
+
+This project has two types of tests:
+
+1. **Unit tests**: Located in `__tests__/` directory, these test individual functions in isolation
+2. **Integration tests**: Located in `tests/` directory, these test the complete functionality of the GitHub App
+
+To run all tests:
+```
+npm test
+```
+
+To run only unit tests:
+```
+npm run test:unit
+```
+
+To run only integration tests:
+```
+npm run test:integration
+```
+
+> **Note**: Integration tests create real repositories, branches, and pull requests on GitHub. If tests are interrupted or fail, they may leave test data on GitHub. Always run the cleanup script after testing.
+
+## Cleanup
+
+To remove any test repositories created during testing:
+
+```
+npm run cleanup
+```
+
+This will delete any repositories with names starting with 'capability-test-', 'test-repo-', or 'branch-test-'.
 
 ## Features
 

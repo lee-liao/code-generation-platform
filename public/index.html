@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Codebase Generation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 4px;
+            display: none;
+        }
+        .running {
+            background-color: #fff3cd;
+            border: 1px solid #ffeaa7;
+            color: #856404;
+        }
+        .done {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <h1>Codebase Generation</h1>
+    
+    <form id="generationForm">
+        <div class="form-group">
+            <label for="projectFolder">Project Folder With Spec:</label>
+            <input type="text" id="projectFolder" name="projectFolder" required>
+            <small>Path to the template project directory</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="repoName">GitHub Repository Name:</label>
+            <input type="text" id="repoName" name="repoName" required>
+            <small>Name for the new GitHub repository</small>
+        </div>
+        
+        <div class="form-group">
+            <label for="repoDescription">GitHub Repository Description:</label>
+            <input type="text" id="repoDescription" name="repoDescription">
+            <small>Description for the new GitHub repository</small>
+        </div>
+        
+        <div class="form-group">
+            <label>
+                <input type="checkbox" id="verboseLogging" name="verboseLogging"> 
+                Enable Claude AI verbose logging (sets ANTHROPIC_LOG=debug)
+            </label>
+        </div>
+        
+        <button type="submit" id="submitBtn">Generate Codebase</button>
+    </form>
+    
+    <div id="status"></div>
+    
+    <script>
+        const form = document.getElementById('generationForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusDiv = document.getElementById('status');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(form);
+            const data = {
+                projectFolder: formData.get('projectFolder'),
+                repoName: formData.get('repoName'),
+                repoDescription: formData.get('repoDescription'),
+                verboseLogging: document.getElementById('verboseLogging').checked
+            };
+            
+            // Disable the submit button and show running status
+            submitBtn.disabled = true;
+            statusDiv.style.display = 'block';
+            statusDiv.className = 'running';
+            statusDiv.textContent = 'Running... at step initial validation';
+            
+            try {
+                // Start the codebase generation task
+                const response = await fetch('/generate-codebase', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(await response.text());
+                }
+                
+                const { taskId } = await response.json();
+                
+                // Start polling for task status
+                await pollTaskStatus(taskId);
+            } catch (error) {
+                statusDiv.className = 'error';
+                statusDiv.textContent = `Error: ${error.message}`;
+                submitBtn.disabled = false;
+            }
+        });
+        
+        async function pollTaskStatus(taskId) {
+            let taskDone = false;
+            
+            while (!taskDone) {
+                try {
+                    const response = await fetch(`/task-status/${taskId}`);
+                    const status = await response.json();
+                    
+                    if (response.ok) {
+                        statusDiv.textContent = status.message || `Running... at step ${status.step || 'unknown'}`;
+                        
+                        // Add kill button when Claude AI is processing
+                        if (status.step === 'claude-processing' && !document.getElementById('killBtn')) {
+                            const killBtn = document.createElement('button');
+                            killBtn.id = 'killBtn';
+                            killBtn.textContent = 'Kill Process';
+                            killBtn.style.marginLeft = '10px';
+                            killBtn.onclick = () => killProcess(taskId);
+                            statusDiv.appendChild(document.createElement('br'));
+                            statusDiv.appendChild(killBtn);
+                        }
+                        
+                        if (status.completed) {
+                            // Remove kill button if it exists
+                            const killBtn = document.getElementById('killBtn');
+                            if (killBtn) killBtn.remove();
+                            
+                            statusDiv.className = 'done';
+                            statusDiv.innerHTML = `<strong>Done!</strong><br>${status.summary || 'Codebase generation completed successfully.'}`;
+                            taskDone = true;
+                            submitBtn.disabled = false;
+                        }
+                    } else {
+                        // Remove kill button if it exists
+                        const killBtn = document.getElementById('killBtn');
+                        if (killBtn) killBtn.remove();
+                        
+                        throw new Error(status.error || 'Unknown error occurred');
+                    }
+                } catch (error) {
+                    // Remove kill button if it exists
+                    const killBtn = document.getElementById('killBtn');
+                    if (killBtn) killBtn.remove();
+                    
+                    statusDiv.className = 'error';
+                    statusDiv.textContent = `Error checking status: ${error.message}`;
+                    submitBtn.disabled = false;
+                    taskDone = true;
+                }
+                
+                // Wait before polling again
+                if (!taskDone) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+            }
+        }
+        
+        async function killProcess(taskId) {
+            const killBtn = document.getElementById('killBtn');
+            if (killBtn) {
+                killBtn.disabled = true;
+                killBtn.textContent = 'Terminating...';
+            }
+            
+            try {
+                const response = await fetch(`/kill-process/${taskId}`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML += `<br><strong>Process terminated:</strong> ${result.message}`;
+                    if (killBtn) killBtn.remove();
+                } else {
+                    statusDiv.innerHTML += `<br><strong>Error terminating process:</strong> ${result.error}`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML += `<br><strong>Error terminating process:</strong> ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>
