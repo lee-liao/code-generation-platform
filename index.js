@@ -6,6 +6,7 @@ const swaggerUi = require('swagger-ui-express');
 const { GitHubApp } = require('./github-app');
 const codebaseGenerationRouter = require('./routes/codebase-generation');
 const gitOperationsRouter = require('./routes/git-operations');
+const claudeTestRouter = require('./routes/claude-test');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -917,6 +918,9 @@ app.use('/', codebaseGenerationRouter);
 
 // Git operations routes  
 app.use('/git', gitOperationsRouter); // Put git operations under /git prefix to avoid conflicts
+
+// Claude command test routes
+app.use('/', claudeTestRouter);
 
 // Serve static files at root (this will serve index.html)
 app.use(express.static('public'));

@@ -1,5 +1,5 @@
 const express = require('express');
-const { exec, spawn } = require('child_process');
+const { exec, spawn, execSync } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs').promises;
 const path = require('path');
@@ -145,39 +145,93 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
     const newProjectPath = path.join(parentDir, repoName);
     await copyDirectory(projectFolder, newProjectPath);
     
-    taskManager.updateTask(taskId, { step: 'claude-processing', message: 'Skipping Claude AI processing (commented out for testing)...' });
-    await logOperation('Skipping Claude AI processing for testing Git/GitHub workflow');
+    taskManager.updateTask(taskId, { step: 'claude-processing', message: 'Running Claude AI processing...' });
+    await logOperation('Starting Claude AI processing');
     
-    // COMMENTED OUT CLAUDE PROCESSING FOR TESTING THE GIT/GITHUB WORKFLOW FIRST
-    // When Claude is ready, uncomment the code below
-    /*
     // Run Claude command in the new directory
-    const claudeCommand = `claude -p --permission-mode bypassPermissions "Read OpenSpec change id add-snippet-web-assembly and implement it. After implemented, open the new created files to verify the requirements are fulfilled."`;
+    const claudeCommand = 'claude -p --permission-mode bypassPermissions "Read the OpenSpec requirement documents at openspec/changes/add-snippet-web-assembly and implement the specification. Create the required files and directories as specified in the OpenSpec document. After implementation, verify the new created files fulfill the requirements."';
     
     // Change to the new project directory to run the command
     const originalCwd = process.cwd();
     try {
+      // Set environment based on verbose logging setting
+      const environment = { ...process.env, GITHUB_USERNAME: process.env.GITHUB_USERNAME };
+      if (verboseLogging) {
+        environment.ANTHROPIC_LOG = 'debug';
+      }
+      
+      // Change to the project directory
       process.chdir(newProjectPath);
       
       try {
-        // Check if Claude CLI is available before attempting to run
+        // Check if Claude CLI is available by attempting to run a simple command
         const { execSync } = require('child_process');
-        execSync('where claude', { stdio: 'pipe', shell: true });
         
-        // Claude CLI is available, proceed with the command
-        // Split command and arguments for spawn
-        const [cmd, ...args] = claudeCommand.split(' ');
+        // Instead of relying on PATH, let's try a different approach
+        // We'll attempt to run the command directly and handle the error
+        // First, run the availability check in a broader context
+        let claudeAvailable = false;
         
-        // Set environment based on verbose logging setting
-        const environment = { ...process.env, GITHUB_USERNAME: process.env.GITHUB_USERNAME };
-        if (verboseLogging) {
-          environment.ANTHROPIC_LOG = 'debug';
+        try {
+          execSync('cmd /c claude --version', { 
+            stdio: 'pipe', 
+            env: environment,
+            cwd: newProjectPath 
+          });
+          claudeAvailable = true;
+        } catch (availabilityCheckError) {
+          console.log('First Claude availability check failed, trying with enhanced PATH');
+          // If the first check fails, try with a more explicit PATH
+          const enhancedEnv = {
+            ...environment,
+            PATH: `${process.env.PATH || ''};${process.env.USERPROFILE || process.env.HOMEPATH}\\AppData\\Roaming\\npm;D:\\Users\\liao_\\AppData\\Roaming\\npm;C:\\Users\\%USERNAME%\\AppData\\Roaming\\npm`
+          };
+          
+          try {
+            execSync('cmd /c claude --version', { 
+              stdio: 'pipe', 
+              env: enhancedEnv,
+              cwd: newProjectPath 
+            });
+            claudeAvailable = true;
+            // If this succeeds, update the environment for the actual command
+            Object.assign(environment, enhancedEnv);
+          } catch (secondCheckError) {
+            console.log('Second Claude availability check also failed');
+            // Try a direct path approach
+            try {
+              execSync('cmd /c "D:\\Users\\liao_\\AppData\\Roaming\\npm\\claude.cmd" --version', { 
+                stdio: 'pipe', 
+                env: environment,
+                cwd: newProjectPath 
+              });
+              claudeAvailable = true;
+              // Update PATH to include Claude's installation directory
+              const directPathEnv = {
+                ...environment,
+                PATH: `D:\\Users\\liao_\\AppData\\Roaming\\npm;${process.env.PATH || ''}`
+              };
+              Object.assign(environment, directPathEnv);
+            } catch (directCheckError) {
+              console.log('Direct path check also failed');
+            }
+          }
         }
         
-        return new Promise((resolve, reject) => {
-          const childProcess = spawn(cmd, args, {
+        if (!claudeAvailable) {
+          throw new Error('Claude CLI not found after all attempts');
+        }
+        
+        // Claude CLI is available, proceed with the command
+        await new Promise((resolve, reject) => {
+          // Use the enhanced environment that we know works
+          const finalEnvironment = { ...environment };
+          
+          const childProcess = spawn('cmd', ['/c', claudeCommand], {
             cwd: newProjectPath,
-            env: environment
+            env: finalEnvironment,
+            stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin to prevent hanging
+            windowsHide: true
           });
           
           // Track the process in the task manager
@@ -198,7 +252,24 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
             stderr += data.toString();
           });
           
+          // Increase timeout to 5 minutes to allow Claude to complete properly
+          const timeoutId = setTimeout(() => {
+            if (!childProcess.killed) {
+              childProcess.kill();
+              taskManager.updateProcessInfo(taskId, {
+                pid: childProcess.pid,
+                status: 'killed-by-timeout',
+                endTime: new Date()
+              });
+              logOperation('Claude AI processing timed out after 5 minutes. Process was terminated.');
+              reject(new Error('Claude AI processing timed out after 5 minutes. Process was terminated.'));
+            }
+          }, 300000); // 5 minutes timeout
+          
           childProcess.on('close', (code) => {
+            // Clear the timeout since the process has already completed
+            clearTimeout(timeoutId);
+            
             taskManager.updateProcessInfo(taskId, {
               pid: childProcess.pid,
               status: 'completed',
@@ -208,78 +279,77 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
             
             if (code === 0) {
               // Save Claude output to file
-              let outputContent = `Stdout:\\n${stdout}\\n\\nStderr:\\n${stderr}\\n\\nCommand executed: ${claudeCommand}\\nExit code: ${code}`;
+              let outputContent = `Stdout:\n${stdout}\n\nStderr:\n${stderr}\n\nCommand executed: ${claudeCommand}\nExit code: ${code}`;
               if (verboseLogging) {
-                outputContent += '\\nVerbose logging was enabled (ANTHROPIC_LOG=debug)';
+                outputContent += '\nVerbose logging was enabled (ANTHROPIC_LOG=debug)';
               }
               fs.writeFile(path.join(newProjectPath, 'claude output.txt'), outputContent)
                 .then(() => {
-                  logOperation('Claude AI processing completed. Output saved to claude output.txt');
+                  logOperation('Claude AI processing completed successfully. Output saved to claude output.txt');
+                  taskManager.updateTask(taskId, { 
+                    step: 'claude-processing-complete', 
+                    message: 'Claude processing completed. Proceeding to Git setup...' 
+                  });
                   resolve();
                 })
-                .catch(writeErr => reject(writeErr));
+                .catch(writeErr => {
+                  logOperation(`Failed to write Claude output: ${writeErr.message}`);
+                  reject(writeErr);
+                });
             } else {
-              let errorOutput = `Stdout:\\n${stdout}\\n\\nStderr:\\n${stderr}\\n\\nCommand executed: ${claudeCommand}\\nExit code: ${code}`;
+              let errorOutput = `Stdout:\n${stdout}\n\nStderr:\n${stderr}\n\nCommand executed: ${claudeCommand}\nExit code: ${code}`;
               if (verboseLogging) {
-                errorOutput += '\\nVerbose logging was enabled (ANTHROPIC_LOG=debug)';
+                errorOutput += '\nVerbose logging was enabled (ANTHROPIC_LOG=debug)';
               }
-              const error = new Error(`Claude command failed with exit code ${code}.\\nOutput: ${errorOutput}`);
+              logOperation(`Claude command failed with exit code ${code}`);
+              const error = new Error(`Claude command failed with exit code ${code}.\nOutput: ${errorOutput}`);
+              taskManager.updateTask(taskId, { 
+                step: 'claude-processing-error', 
+                message: `Claude processing failed with exit code: ${code}` 
+              });
               reject(error);
             }
           });
           
           childProcess.on('error', (error) => {
+            // Clear the timeout since the process has erred
+            clearTimeout(timeoutId);
+            
             taskManager.updateProcessInfo(taskId, {
               pid: childProcess.pid,
               status: 'error',
               error: error.message,
               endTime: new Date()
             });
+            logOperation(`Claude command error: ${error.message}`);
+            taskManager.updateTask(taskId, { 
+              step: 'claude-processing-error', 
+              message: `Claude processing error: ${error.message}` 
+            });
             reject(error);
           });
-          
-          // Set timeout to kill the process if it takes too long
-          setTimeout(() => {
-            if (!childProcess.killed) {
-              childProcess.kill();
-              taskManager.updateProcessInfo(taskId, {
-                pid: childProcess.pid,
-                status: 'killed-by-timeout',
-                endTime: new Date()
-              });
-              reject(new Error('Claude AI processing timed out after 5 minutes. Process was terminated.'));
-            }
-          }, 300000); // 5 minute timeout
         });
       } catch (error) {
-        // Claude CLI is not available, log and create a placeholder output
-        await logOperation('Claude CLI not found on system. Skipping Claude processing.');
+        // Claude CLI is not available, log and update task status
+        await logOperation(`Claude CLI not found on system. Error: ${error.message}`);
+        taskManager.updateTask(taskId, { 
+          step: 'claude-processing-error', 
+          message: `Claude CLI not available: ${error.message}` 
+        });
         
         // Create a placeholder output file to indicate that Claude was skipped
-        let outputContent = `Claude AI processing was skipped because Claude CLI is not installed or not in PATH.
-
-Command that would have been executed: ${claudeCommand}
-
-To enable Claude processing, please install Claude CLI from Anthropic.`;
+        let outputContent = `Claude AI processing was skipped because Claude CLI is not installed or not in PATH.\n\nError: ${error.message}\n\nCommand that would have been executed: ${claudeCommand}\n\nTo enable Claude processing, please install Claude CLI from Anthropic.`;
         if (verboseLogging) {
-          outputContent += '\\nVerbose logging was enabled but Claude CLI not available.';
+          outputContent += '\nVerbose logging was enabled but Claude CLI not available.';
         }
         await fs.writeFile(path.join(newProjectPath, 'claude output.txt'), outputContent);
         
-        return; // Skip Claude processing but continue with the rest of the workflow
+        // Throw error to prevent proceeding to Git operations
+        throw error;
       }
     } finally {
       process.chdir(originalCwd);
     }
-    */
-    
-    // Create a placeholder output file to maintain workflow consistency
-    const placeholderClaudeCommand = `claude -p --permission-mode bypassPermissions \"Read OpenSpec change id add-snippet-web-assembly and implement it. After implemented, open the new created files to verify the requirements are fulfilled.\"`;
-    let outputContent = 'Claude AI processing was skipped for testing.\\n\\nCommand that would have been executed: ' + placeholderClaudeCommand;
-    if (verboseLogging) {
-      outputContent += '\\nVerbose logging was enabled but Claude processing skipped for testing.';
-    }
-    await fs.writeFile(path.join(newProjectPath, 'claude output.txt'), outputContent);
     
     taskManager.updateTask(taskId, { step: 'git-setup', message: 'Setting up Git repository...' });
     await logOperation('Setting up Git repository');
