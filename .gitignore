@@ -218,6 +218,7 @@ __marimo__/
 
 # Private key files
 *.pem
+.keystore/
 
 # Wucai directory
 .wucai/
