@@ -156,6 +156,28 @@ npm run dev
 
 The server will run on `http://localhost:3000` by default.
 
+## Docker Deployment
+
+To run this application using Docker:
+
+1. Copy the example environment file:
+   ```bash
+   cp example.env .env
+   ```
+   
+2. Update the `.env` file with your specific configuration values (GitHub App credentials, etc.)
+
+3. If using GitHub App authentication, place your private key file as `private-key.pem` in the project root
+
+4. Build and run the containers:
+   ```bash
+   docker-compose up -d
+   ```
+
+The application will be available at `http://localhost:3000` with the API documentation at `http://localhost:3000/api-docs`.
+
+For more detailed Docker setup instructions, see [DOCKER_SETUP.md](./DOCKER_SETUP.md).
+
 ## Local Development
 
 1. Run with nodemon for automatic restart on file changes:

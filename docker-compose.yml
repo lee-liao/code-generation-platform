@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: code-generation-platform
+    ports:
+      - "${HOST_PORT:-8510}:3000"
+    environment:
+      # GitHub App Configuration
+      GITHUB_APP_ID: ${GITHUB_APP_ID:-2287197}
+      GITHUB_PRIVATE_KEY_PATH: ${GITHUB_PRIVATE_KEY_PATH:-./private-key.pem}
+      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-94791086}
+      GITHUB_APP_NAME: ${GITHUB_APP_NAME:-code-generation-platform}
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PERSONAL_ACCESS_TOKEN:-}
+      GITHUB_USERNAME: ${GITHUB_USERNAME:-}
+      # Server Configuration
+      PORT: ${PORT:-3000}
+      # Snippets library path
+      SNIPPETS_PATH: ${SNIPPETS_PATH:-./snippets}
+    volumes:
+      # Mount the private key if it exists
+      - ./private-key.pem:/app/private-key.pem:ro
+      # Mount snippets directory if it exists
+      - ./snippets:/app/snippets:ro
+      # Mount openspec directory (referenced in codebase generation)
+      - ./openspec:/app/openspec:ro
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
