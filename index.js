@@ -28,8 +28,8 @@ const options = {
     },
     servers: [
       {
-        url: `http://localhost:${port}`,
-        description: 'Development server',
+        url: '/',
+        description: 'Current server',
       },
     ],
     components: {

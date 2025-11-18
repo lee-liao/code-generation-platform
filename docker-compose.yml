@@ -12,14 +12,14 @@ services:
       # GitHub App Configuration
       GITHUB_APP_ID: ${GITHUB_APP_ID:-2287197}
       GITHUB_PRIVATE_KEY_PATH: ${GITHUB_PRIVATE_KEY_PATH:-./private-key.pem}
-      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-94791086}
+      GITHUB_INSTALLATION_ID: ${GITHUB_INSTALLATION_ID:-95232704}
       GITHUB_APP_NAME: ${GITHUB_APP_NAME:-code-generation-platform}
       GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PERSONAL_ACCESS_TOKEN:-}
       GITHUB_USERNAME: ${GITHUB_USERNAME:-}
       # Server Configuration
       PORT: ${PORT:-3000}
       # Snippets library path
-      SNIPPETS_PATH: ${SNIPPETS_PATH:-./snippets}
+      SNIPPETS_PATH: ${SNIPPETS_PATH:-./simplest-snippets}
     volumes:
       # Mount the private key if it exists
       - ./private-key.pem:/app/private-key.pem:ro

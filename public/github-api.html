@@ -1,0 +1,677 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub App API Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+        }
+        .form-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            background-color: #fafafa;
+        }
+        .form-section h2 {
+            margin-top: 0;
+            color: #444;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"], input[type="password"], input[type="number"], textarea, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box;
+            font-size: 14px;
+        }
+        textarea {
+            min-height: 100px;
+            font-family: monospace;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .secondary-btn {
+            background-color: #6c757d;
+        }
+        .secondary-btn:hover {
+            background-color: #545b62;
+        }
+        .response-section {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .response-section pre {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            font-size: 14px;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        .tab {
+            overflow: hidden;
+            border: 1px solid #ccc;
+            background-color: #f1f1f1;
+            border-radius: 4px 4px 0 0;
+        }
+        .tab button {
+            background-color: inherit;
+            float: left;
+            border: none;
+            outline: none;
+            cursor: pointer;
+            padding: 14px 16px;
+            transition: 0.3s;
+            color: #333;
+            font-size: 14px;
+        }
+        .tab button:hover {
+            background-color: #ddd;
+        }
+        .tab button.active {
+            background-color: #007bff;
+            color: white;
+        }
+        .tabcontent {
+            display: none;
+            padding: 20px;
+            border: 1px solid #ccc;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            background-color: white;
+        }
+        .form-row {
+            display: flex;
+            gap: 15px;
+        }
+        .form-row .form-group {
+            flex: 1;
+        }
+        @media (max-width: 768px) {
+            .form-row {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GitHub App API Client</h1>
+        
+        <div class="tab">
+            <button class="tablinks active" onclick="openTab(event, 'repo')">Repository</button>
+            <button class="tablinks" onclick="openTab(event, 'branch')">Branch</button>
+            <button class="tablinks" onclick="openTab(event, 'file')">File</button>
+            <button class="tablinks" onclick="openTab(event, 'pr')">Pull Request</button>
+            <button class="tablinks" onclick="openTab(event, 'info')">Info</button>
+            <button class="tablinks" onclick="openTab(event, 'commit')">Commit</button>
+        </div>
+
+        <!-- Repository Tab -->
+        <div id="repo" class="tabcontent" style="display: block;">
+            <div class="form-section">
+                <h2>Create Repository</h2>
+                <form id="createRepoForm">
+                    <div class="form-group">
+                        <label for="repoOwner">Owner (Username or Organization):</label>
+                        <input type="text" id="repoOwner" name="owner" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="repoName">Repository Name:</label>
+                        <input type="text" id="repoName" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="repoDescription">Description:</label>
+                        <input type="text" id="repoDescription" name="description">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="repoIsPrivate" name="isPrivate"> 
+                            Private Repository
+                        </label>
+                    </div>
+                    <button type="submit">Create Repository</button>
+                    <button type="button" class="secondary-btn" onclick="clearForm('createRepoForm')">Clear</button>
+                </form>
+                
+                <div id="createRepoResponse" class="response-section"></div>
+            </div>
+        </div>
+
+        <!-- Branch Tab -->
+        <div id="branch" class="tabcontent">
+            <div class="form-section">
+                <h2>Create Branch</h2>
+                <form id="createBranchForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="branchOwner">Owner:</label>
+                            <input type="text" id="branchOwner" name="owner" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="branchRepo">Repository:</label>
+                            <input type="text" id="branchRepo" name="repo" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="branchName">New Branch Name:</label>
+                        <input type="text" id="branchName" name="branchName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="sourceBranch">Source Branch (default: main):</label>
+                        <input type="text" id="sourceBranch" name="sourceBranch" value="main">
+                    </div>
+                    <button type="submit">Create Branch</button>
+                    <button type="button" class="secondary-btn" onclick="clearForm('createBranchForm')">Clear</button>
+                </form>
+                
+                <div id="createBranchResponse" class="response-section"></div>
+            </div>
+            
+            <div class="form-section">
+                <h2>Get Branches</h2>
+                <form id="getBranchesForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="getBranchesOwner">Owner:</label>
+                            <input type="text" id="getBranchesOwner" name="owner" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="getBranchesRepo">Repository:</label>
+                            <input type="text" id="getBranchesRepo" name="repo" required>
+                        </div>
+                    </div>
+                    <button type="submit">Get Branches</button>
+                    <button type="button" class="secondary-btn" onclick="clearForm('getBranchesForm')">Clear</button>
+                </form>
+                
+                <div id="getBranchesResponse" class="response-section"></div>
+            </div>
+        </div>
+
+        <!-- File Tab -->
+        <div id="file" class="tabcontent">
+            <div class="form-section">
+                <h2>Add File to Repository</h2>
+                <form id="addFileForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="addFileOwner">Owner:</label>
+                            <input type="text" id="addFileOwner" name="owner" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="addFileRepo">Repository:</label>
+                            <input type="text" id="addFileRepo" name="repo" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="filePath">File Path:</label>
+                        <input type="text" id="filePath" name="filePath" required placeholder="e.g., docs/readme.md">
+                    </div>
+                    <div class="form-group">
+                        <label for="fileContent">File Content:</label>
+                        <textarea id="fileContent" name="content" required></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="fileBranch">Branch (default: main):</label>
+                            <input type="text" id="fileBranch" name="branch" value="main">
+                        </div>
+                        <div class="form-group">
+                            <label for="fileCommitMessage">Commit Message:</label>
+                            <input type="text" id="fileCommitMessage" name="commitMessage" value="Add file via API">
+                        </div>
+                    </div>
+                    <button type="submit">Add File</button>
+                    <button type="button" class="secondary-btn" onclick="clearForm('addFileForm')">Clear</button>
+                </form>
+                
+                <div id="addFileResponse" class="response-section"></div>
+            </div>
+        </div>
+
+        <!-- Pull Request Tab -->
+        <div id="pr" class="tabcontent">
+            <div class="form-section">
+                <h2>Create Pull Request</h2>
+                <form id="createPRForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="prOwner">Owner:</label>
+                            <input type="text" id="prOwner" name="owner" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="prRepo">Repository:</label>
+                            <input type="text" id="prRepo" name="repo" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="prTitle">Title:</label>
+                        <input type="text" id="prTitle" name="title" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="prBody">Body:</label>
+                        <textarea id="prBody" name="body" placeholder="Pull request description"></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="prHead">Source Branch:</label>
+                            <input type="text" id="prHead" name="head" required placeholder="e.g., feature/new-feature">
+                        </div>
+                        <div class="form-group">
+                            <label for="prBase">Target Branch (default: main):</label>
+                            <input type="text" id="prBase" name="base" value="main">
+                        </div>
+                    </div>
+                    <button type="submit">Create Pull Request</button>
+                    <button type="button" class="secondary-btn" onclick="clearForm('createPRForm')">Clear</button>
+                </form>
+                
+                <div id="createPRResponse" class="response-section"></div>
+            </div>
+        </div>
+
+        <!-- Info Tab -->
+        <div id="info" class="tabcontent">
+            <div class="form-section">
+                <h2>Get Installation Info</h2>
+                <button id="getInstallInfoBtn">Get Installation Info</button>
+                
+                <div id="installInfoResponse" class="response-section"></div>
+            </div>
+            
+            <div class="form-section">
+                <h2>Get Repository Info</h2>
+                <form id="getRepositoryForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="repoInfoOwner">Owner:</label>
+                            <input type="text" id="repoInfoOwner" name="owner" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="repoInfoRepo">Repository:</label>
+                            <input type="text" id="repoInfoRepo" name="repo" required>
+                        </div>
+                    </div>
+                    <button type="submit">Get Repository Info</button>
+                    <button type="button" class="secondary-btn" onclick="clearForm('getRepositoryForm')">Clear</button>
+                </form>
+                
+                <div id="getRepositoryResponse" class="response-section"></div>
+            </div>
+        </div>
+
+        <!-- Commit Tab -->
+        <div id="commit" class="tabcontent">
+            <div class="form-section">
+                <h2>Commit Multiple Files</h2>
+                <form id="commitForm">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="commitOwner">Owner:</label>
+                            <input type="text" id="commitOwner" name="owner" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="commitRepo">Repository:</label>
+                            <input type="text" id="commitRepo" name="repo" required>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="commitMessage">Commit Message:</label>
+                        <input type="text" id="commitMessage" name="commitMessage" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="commitFiles">Files (JSON Array):</label>
+                        <textarea id="commitFiles" name="files" required placeholder='[{"path": "path/to/file.txt", "content": "file content"}]'></textarea>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="commitBranch">Branch (default: main):</label>
+                            <input type="text" id="commitBranch" name="branch" value="main">
+                        </div>
+                        <div class="form-group">
+                            <label for="commitParentBranch">Parent Branch (default: main):</label>
+                            <input type="text" id="commitParentBranch" name="parentBranch" value="main">
+                        </div>
+                    </div>
+                    <button type="submit">Commit Files</button>
+                    <button type="button" class="secondary-btn" onclick="clearForm('commitForm')">Clear</button>
+                </form>
+                
+                <div id="commitResponse" class="response-section"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab functionality
+        function openTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            tabcontent = document.getElementsByClassName("tabcontent");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].style.display = "none";
+            }
+            tablinks = document.getElementsByClassName("tablinks");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].className = tablinks[i].className.replace(" active", "");
+            }
+            document.getElementById(tabName).style.display = "block";
+            evt.currentTarget.className += " active";
+        }
+
+        // Helper function to show response
+        function showResponse(elementId, data, isError = false) {
+            const responseDiv = document.getElementById(elementId);
+            responseDiv.style.display = 'block';
+            responseDiv.className = isError ? 'response-section error' : 'response-section success';
+            responseDiv.innerHTML = '<h3>Response:</h3><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+        }
+
+        // Helper function to clear form
+        function clearForm(formId) {
+            const form = document.getElementById(formId);
+            form.reset();
+            const responseDivs = form.parentElement.querySelectorAll('.response-section');
+            responseDivs.forEach(div => {
+                div.style.display = 'none';
+            });
+        }
+
+        // Form submission handlers
+        document.getElementById('createRepoForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                owner: formData.get('owner'),
+                name: formData.get('name'),
+                description: formData.get('description'),
+                isPrivate: formData.get('isPrivate') === 'on'
+            };
+
+            try {
+                const response = await fetch('/create-repo', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                showResponse('createRepoResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('createRepoResponse', { error: error.message }, true);
+            }
+        });
+
+        document.getElementById('createBranchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                owner: formData.get('owner'),
+                repo: formData.get('repo'),
+                branchName: formData.get('branchName'),
+                sourceBranch: formData.get('sourceBranch') || 'main'
+            };
+
+            try {
+                const response = await fetch('/create-branch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                showResponse('createBranchResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('createBranchResponse', { error: error.message }, true);
+            }
+        });
+
+        document.getElementById('getBranchesForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const owner = formData.get('owner');
+            const repo = formData.get('repo');
+
+            try {
+                const response = await fetch(`/branches?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`);
+
+                const result = await response.json();
+                showResponse('getBranchesResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('getBranchesResponse', { error: error.message }, true);
+            }
+        });
+
+        document.getElementById('addFileForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                owner: formData.get('owner'),
+                repo: formData.get('repo'),
+                filePath: formData.get('filePath'),
+                content: formData.get('content'),
+                branch: formData.get('branch') || 'main',
+                commitMessage: formData.get('commitMessage') || 'Add file via API'
+            };
+
+            try {
+                const response = await fetch('/add-file', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                showResponse('addFileResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('addFileResponse', { error: error.message }, true);
+            }
+        });
+
+        document.getElementById('createPRForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                owner: formData.get('owner'),
+                repo: formData.get('repo'),
+                title: formData.get('title'),
+                body: formData.get('body'),
+                head: formData.get('head'),
+                base: formData.get('base') || 'main'
+            };
+
+            try {
+                const response = await fetch('/create-pull-request', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                showResponse('createPRResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('createPRResponse', { error: error.message }, true);
+            }
+        });
+
+        document.getElementById('getInstallInfoBtn').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/installation-info');
+
+                const result = await response.json();
+                showResponse('installInfoResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('installInfoResponse', { error: error.message }, true);
+            }
+        });
+
+        document.getElementById('getRepositoryForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const owner = formData.get('owner');
+            const repo = formData.get('repo');
+
+            try {
+                const response = await fetch(`/repository?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`);
+
+                const result = await response.json();
+                showResponse('getRepositoryResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('getRepositoryResponse', { error: error.message }, true);
+            }
+        });
+
+        document.getElementById('commitForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            // Parse the files JSON
+            let files;
+            try {
+                files = JSON.parse(formData.get('files'));
+            } catch (error) {
+                showResponse('commitResponse', { error: 'Invalid JSON format for files' }, true);
+                return;
+            }
+
+            const data = {
+                owner: formData.get('owner'),
+                repo: formData.get('repo'),
+                commitMessage: formData.get('commitMessage'),
+                files: files,
+                branch: formData.get('branch') || 'main',
+                parentBranch: formData.get('parentBranch') || 'main'
+            };
+
+            try {
+                const response = await fetch('/commit', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                showResponse('commitResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('commitResponse', { error: error.message }, true);
+            }
+        });
+
+        // Add branch tab event listener for getting a specific branch
+        const getBranchForm = document.createElement('form');
+        getBranchForm.id = 'getSpecificBranchForm';
+        getBranchForm.innerHTML = `
+            <div class="form-section">
+                <h2>Get Specific Branch</h2>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="getBranchOwner">Owner:</label>
+                        <input type="text" id="getBranchOwner" name="owner" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="getBranchRepo">Repository:</label>
+                        <input type="text" id="getBranchRepo" name="repo" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="getBranchName">Branch Name:</label>
+                    <input type="text" id="getBranchName" name="branchName" required>
+                </div>
+                <button type="submit">Get Branch Info</button>
+                <button type="button" class="secondary-btn" onclick="clearForm('getSpecificBranchForm')">Clear</button>
+            </div>
+            <div id="getSpecificBranchResponse" class="response-section"></div>
+        `;
+        
+        document.getElementById('branch').appendChild(getBranchForm);
+        
+        document.getElementById('getSpecificBranchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const owner = formData.get('owner');
+            const repo = formData.get('repo');
+            const branchName = formData.get('branchName');
+
+            try {
+                const response = await fetch(`/branch?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&branchName=${encodeURIComponent(branchName)}`);
+
+                const result = await response.json();
+                showResponse('getSpecificBranchResponse', result, !response.ok);
+            } catch (error) {
+                showResponse('getSpecificBranchResponse', { error: error.message }, true);
+            }
+        });
+    </script>
+</body>
+</html>
