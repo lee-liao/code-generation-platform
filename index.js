@@ -919,9 +919,6 @@ app.use('/', codebaseGenerationRouter);
 // Git operations routes  
 app.use('/git', gitOperationsRouter); // Put git operations under /git prefix to avoid conflicts
 
-// Claude command test routes
-app.use('/', claudeTestRouter);
-
 // Serve static files at root (this will serve index.html)
 app.use(express.static('public'));
 

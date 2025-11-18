@@ -172,8 +172,20 @@
                             const killBtn = document.getElementById('killBtn');
                             if (killBtn) killBtn.remove();
                             
-                            statusDiv.className = 'done';
-                            statusDiv.innerHTML = `<strong>Done!</strong><br>${status.summary || 'Codebase generation completed successfully.'}`;
+                            // Check if the task was successful or failed
+                            if (status.message && status.message.includes('Error:')) {
+                                // Task failed
+                                statusDiv.className = 'error';
+                                statusDiv.innerHTML = `<strong>Failed!</strong><br>${status.summary || status.message}`;
+                            } else if (status.step === 'error') {
+                                // Task failed with error step
+                                statusDiv.className = 'error';
+                                statusDiv.innerHTML = `<strong>Failed!</strong><br>${status.summary || 'Codebase generation failed.'}`;
+                            } else {
+                                // Task completed successfully
+                                statusDiv.className = 'done';
+                                statusDiv.innerHTML = `<strong>Done!</strong><br>${status.summary || 'Codebase generation completed successfully.'}`;
+                            }
                             taskDone = true;
                             submitBtn.disabled = false;
                         }

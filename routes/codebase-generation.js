@@ -4,6 +4,7 @@ const { promisify } = require('util');
 const fs = require('fs').promises;
 const path = require('path');
 const { GitHubApp } = require('../github-app');
+const { Anthropic } = require('@anthropic-ai/sdk');
 
 const execAsync = promisify(exec);
 
@@ -148,7 +149,7 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
     taskManager.updateTask(taskId, { step: 'claude-processing', message: 'Running Claude AI processing...' });
     await logOperation('Starting Claude AI processing');
     
-    // Run Claude command in the new directory
+    // Run Claude command in the new directory for file system operations
     const claudeCommand = 'claude -p --permission-mode bypassPermissions "Read the OpenSpec requirement documents at openspec/changes/add-snippet-web-assembly and implement the specification. Create the required files and directories as specified in the OpenSpec document. After implementation, verify the new created files fulfill the requirements."';
     
     // Change to the new project directory to run the command
@@ -230,7 +231,7 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
           const childProcess = spawn('cmd', ['/c', claudeCommand], {
             cwd: newProjectPath,
             env: finalEnvironment,
-            stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin to prevent hanging
+            stdio: ['pipe', 'pipe', 'pipe'], // Use pipe for stdin to prevent hanging
             windowsHide: true
           });
           
@@ -251,6 +252,11 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
           childProcess.stderr.on('data', (data) => {
             stderr += data.toString();
           });
+          
+          // Write empty input to stdin to prevent hanging on prompts
+          if (childProcess.stdin) {
+            childProcess.stdin.end();
+          }
           
           // Increase timeout to 5 minutes to allow Claude to complete properly
           const timeoutId = setTimeout(() => {
@@ -365,6 +371,9 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
       summary: `Successfully created repository ${repoName} with generated code.`
     });
     await logOperation('Codebase generation completed successfully');
+    console.log(`\n=== WORKFLOW COMPLETED ===`);
+    console.log(`Repository: https://github.com/${process.env.GITHUB_USERNAME || 'username'}/${repoName}`);
+    console.log(`========================\n`);
   } catch (error) {
     console.error('Error in codebase generation:', error);
     await logOperation(`Codebase generation failed: ${error.message}`);
@@ -382,6 +391,11 @@ async function copyDirectory(src, dest) {
   const entries = await fs.readdir(src, { withFileTypes: true });
 
   for (let entry of entries) {
+    // Skip .git directories to avoid permission issues with locked files
+    if (entry.name === '.git') {
+      continue;
+    }
+    
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
 
@@ -398,32 +412,80 @@ async function setupGitAndPush(taskId, projectPath, repoName, repoDescription, g
   
   taskManager.updateTask(taskId, { step: 'github-create-repo', message: 'Creating GitHub repository...' });
   
-  // Create repository on GitHub
+  // Create repository on GitHub - this will use PAT since GitHub Apps can't create new repos
+  // For a true GitHub App only solution, we would work with existing repos
+  // For now, we'll keep the PAT approach but note that this is a limitation of GitHub Apps
   const repo = await githubApp.createRepository(username, repoName, repoDescription, false);
   
-  taskManager.updateTask(taskId, { step: 'git-init', message: 'Initializing local Git repository...' });
+  taskManager.updateTask(taskId, { step: 'adding-files', message: 'Adding files via GitHub API...' });
   
-  // Initialize git repo in the project directory
-  await execAsync('git init', { cwd: projectPath });
-  await execAsync('git checkout -b main', { cwd: projectPath });
+  // Read all files from the project directory and add them via GitHub API
+  await addFilesToRepoViaAPI(taskId, githubApp, username, repoName, projectPath);
   
-  taskManager.updateTask(taskId, { step: 'git-add-commit', message: 'Adding and committing files...' });
+  taskManager.updateTask(taskId, { step: 'completed', message: 'Files successfully added to GitHub repository' });
+  console.log(`Codebase generation completed successfully! Repository: https://github.com/${username}/${repoName}`);
+}
+
+// Helper function to add all files from local directory to GitHub repo via API
+async function addFilesToRepoViaAPI(taskId, githubApp, owner, repo, localPath) {
+  const fs = require('fs').promises;
+  const path = require('path');
   
-  // Add and commit all files
-  await execAsync('git add .', { cwd: projectPath });
-  await execAsync('git config user.email "action@github.com"', { cwd: projectPath });
-  await execAsync('git config user.name "GitHub Action"', { cwd: projectPath });
-  await execAsync('git commit -m "Initial commit: Generated codebase"', { cwd: projectPath });
+  // Read all files recursively and add them via GitHub API
+  const allFiles = await getAllFiles(localPath);
   
-  taskManager.updateTask(taskId, { step: 'git-remote', message: 'Setting up Git remote...' });
+  // Group files by directories to handle them properly
+  for (const filePath of allFiles) {
+    const relativePath = path.relative(localPath, filePath);
+    
+    try {
+      // Read file content
+      const content = await fs.readFile(filePath, 'utf8');
+      
+      // Add file via GitHub API
+      await githubApp.addFile(owner, repo, relativePath, content, 'main', `Add file: ${relativePath}`);
+      
+      // Update task status periodically
+      if (allFiles.indexOf(filePath) % 10 === 0) { // Update every 10 files
+        const progress = Math.round((allFiles.indexOf(filePath) / allFiles.length) * 100);
+        taskManager.updateTask(taskId, { 
+          step: 'adding-files', 
+          message: `Adding files via API... (${allFiles.indexOf(filePath) + 1}/${allFiles.length})` 
+        });
+      }
+    } catch (error) {
+      console.error(`Error adding file ${relativePath}:`, error.message);
+      throw error;
+    }
+  }
+}
+
+// Helper function to recursively get all files in a directory
+async function getAllFiles(dirPath) {
+  const fs = require('fs').promises;
+  const path = require('path');
   
-  // Add remote origin and push
-  const remoteUrl = `https://github.com/${username}/${repoName}.git`;
-  await execAsync(`git remote add origin ${remoteUrl}`, { cwd: projectPath });
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
   
-  taskManager.updateTask(taskId, { step: 'git-push', message: 'Pushing to GitHub...' });
+  const files = [];
   
-  await execAsync('git push -u origin main', { cwd: projectPath });
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    
+    if (entry.name === '.git') {
+      // Skip .git directories
+      continue;
+    }
+    
+    if (entry.isDirectory()) {
+      const nestedFiles = await getAllFiles(fullPath);
+      files.push(...nestedFiles);
+    } else {
+      files.push(fullPath);
+    }
+  }
+  
+  return files;
 }
 
 // Route to start codebase generation
