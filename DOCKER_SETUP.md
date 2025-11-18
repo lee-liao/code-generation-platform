@@ -17,17 +17,15 @@ To run this application using Docker, follow these steps:
 
    You'll need to fill in the following values in your `.env` file:
    - `GITHUB_APP_ID`: Your GitHub App ID
-   - `GITHUB_PRIVATE_KEY_PATH`: Path to your GitHub App private key (inside the container)
    - `GITHUB_INSTALLATION_ID`: Your GitHub App installation ID
    - `GITHUB_PERSONAL_ACCESS_TOKEN`: Your GitHub Personal Access Token
    - `GITHUB_USERNAME`: Your GitHub username
-   - `SNIPPETS_PATH`: Path to your snippets directory
-   - `PORT`: Port inside the container (default: 3000)
-   - `HOST_PORT`: Port on your host machine (default: 8510)
 
    Docker Compose will automatically load these variables from the `.env` file when you run `docker-compose up`.
 
-2. **GitHub Private Key**: If you're using GitHub App authentication, you'll need to place your private key file in the project root as `private-key.pem`. This file will be mounted into the container.
+2. **GitHub Private Key**: If you're using GitHub App authentication, create a `.keystore` directory in the project root and place your private key file (e.g., `code-generation-platform.2025-11-16.private-key.pem`) inside it. Update the `GITHUB_PRIVATE_KEY_PATH` variable in your `.env` file to point to the correct filename (default is `./.keystore/private-key.pem`). This directory will be mounted into the container.
+
+3. **Snippets Directory**: If you plan to use the codebase generation features, create a directory called `simplest-snippets` in the project root with your snippet files. This directory will be mounted into the container.
 
 ### Running the Application
 

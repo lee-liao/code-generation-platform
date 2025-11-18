@@ -81,10 +81,9 @@ This will delete any repositories with names starting with 'capability-test-', '
 3. Configure environment variables:
    - Copy `.env.example` to `.env`
    - Set `GITHUB_APP_ID` to your GitHub App ID
-   - Set `GITHUB_PRIVATE_KEY_PATH` to the path of your private key file (default: `./code-generation-platform.2025-11-13.private-key.pem`)
    - Set `GITHUB_INSTALLATION_ID` to your GitHub App's installation ID
 
-4. Place your GitHub App private key in the project root (or at the path specified in `GITHUB_PRIVATE_KEY_PATH`)
+4. For GitHub App authentication, place your private key in the `.keystore` directory (e.g., `.keystore/code-generation-platform.2025-11-16.private-key.pem`)
 
 ## Environment Variables
 
@@ -167,14 +166,16 @@ To run this application using Docker:
    
 2. Update the `.env` file with your specific configuration values (GitHub App credentials, etc.)
 
-3. If using GitHub App authentication, place your private key file as `private-key.pem` in the project root
+3. For GitHub App authentication, place your private key in the `.keystore` directory as `private-key.pem` (`.keystore/private-key.pem`)
 
-4. Build and run the containers:
+4. If using snippets functionality, create a `simplest-snippets` directory with your snippet files
+
+5. Build and run the containers:
    ```bash
    docker-compose up -d
    ```
 
-The application will be available at `http://localhost:3000` with the API documentation at `http://localhost:3000/api-docs`.
+The application will be available at `http://localhost:8510`, with the API documentation at `http://localhost:8510/api-docs`.
 
 For more detailed Docker setup instructions, see [DOCKER_SETUP.md](./DOCKER_SETUP.md).
 
