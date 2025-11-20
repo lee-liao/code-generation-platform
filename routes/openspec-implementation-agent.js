@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const unzipper = require('unzipper');
 const { GitHubApp } = require('../github-app');
+const installationStorage = require('../utils/installation-storage'); // Import installation storage
 
 const execAsync = promisify(exec);
 const router = express.Router();
@@ -75,9 +76,9 @@ async function validateOpenSpecZip(zipPath) {
 
     // Check the extracted content to determine if it has proper OpenSpec structure
     const extractedContents = await fsPromises.readdir(tempDir);
-    
+
     let changesDir = path.join(tempDir, 'changes');
-    
+
     // Check if there's a changes directory at the root
     let hasChangesDir = false;
     try {
@@ -122,7 +123,7 @@ async function validateOpenSpecZip(zipPath) {
               console.warn(`Warning: Expected file ${file} not found in ${changeDir}, but continuing`);
             }
           }
-          
+
           // Check for specs directory
           const specsDir = path.join(changePath, 'specs');
           try {
@@ -132,7 +133,7 @@ async function validateOpenSpecZip(zipPath) {
           }
         }
       }
-      
+
       return true;
     } else {
       // If no changes directory found but there are some contents, we'll accept it as it will be processed properly in the main function
@@ -184,8 +185,8 @@ async function runClaudeImplementation(taskId, workingDir, changeId, logFilePath
       const environment = { ...process.env };
 
       try {
-        execSync('cmd /c claude --version', { 
-          stdio: 'pipe', 
+        execSync('cmd /c claude --version', {
+          stdio: 'pipe',
           env: environment
         });
         claudeAvailable = true;
@@ -196,10 +197,10 @@ async function runClaudeImplementation(taskId, workingDir, changeId, logFilePath
           ...environment,
           PATH: `${process.env.PATH || ''};${process.env.USERPROFILE || process.env.HOMEPATH}\\AppData\\Roaming\\npm`
         };
-        
+
         try {
-          execSync('cmd /c claude --version', { 
-            stdio: 'pipe', 
+          execSync('cmd /c claude --version', {
+            stdio: 'pipe',
             env: enhancedEnv
           });
           claudeAvailable = true;
@@ -268,12 +269,12 @@ async function runClaudeImplementation(taskId, workingDir, changeId, logFilePath
           if (code === 0) {
             // Claude implementation completed successfully
             let outputContent = `Stdout:\n${stdout}\n\nStderr:\n${stderr}\n\nCommand executed: ${claudeCommand}\nExit code: ${code}`;
-            fs.writeFile(path.join(workingDir, 'claude-implementation-output.txt'), outputContent)
+            fsPromises.writeFile(path.join(workingDir, 'claude-implementation-output.txt'), outputContent)
               .then(() => {
                 logOperation('Claude AI implementation completed successfully.');
-                taskManager.updateTask(taskId, { 
-                  step: 'claude-implementation-complete', 
-                  message: 'Claude implementation completed. Proceeding to Git operations...' 
+                taskManager.updateTask(taskId, {
+                  step: 'claude-implementation-complete',
+                  message: 'Claude implementation completed. Proceeding to Git operations...'
                 });
                 resolve();
               })
@@ -285,9 +286,9 @@ async function runClaudeImplementation(taskId, workingDir, changeId, logFilePath
             let errorOutput = `Stdout:\n${stdout}\n\nStderr:\n${stderr}\n\nCommand executed: ${claudeCommand}\nExit code: ${code}`;
             logOperation(`Claude command failed with exit code ${code}`);
             const error = new Error(`Claude command failed with exit code ${code}.\nOutput: ${errorOutput}`);
-            taskManager.updateTask(taskId, { 
-              step: 'claude-implementation-error', 
-              message: `Claude implementation failed with exit code: ${code}` 
+            taskManager.updateTask(taskId, {
+              step: 'claude-implementation-error',
+              message: `Claude implementation failed with exit code: ${code}`
             });
             reject(error);
           }
@@ -304,9 +305,9 @@ async function runClaudeImplementation(taskId, workingDir, changeId, logFilePath
             endTime: new Date()
           });
           logOperation(`Claude command error: ${error.message}`);
-          taskManager.updateTask(taskId, { 
-            step: 'claude-implementation-error', 
-            message: `Claude implementation error: ${error.message}` 
+          taskManager.updateTask(taskId, {
+            step: 'claude-implementation-error',
+            message: `Claude implementation error: ${error.message}`
           });
           reject(error);
         });
@@ -317,9 +318,9 @@ async function runClaudeImplementation(taskId, workingDir, changeId, logFilePath
   } catch (error) {
     console.error('Error in Claude implementation:', error);
     await logOperation(`Claude implementation failed: ${error.message}`);
-    taskManager.updateTask(taskId, { 
-      step: 'error', 
-      completed: true, 
+    taskManager.updateTask(taskId, {
+      step: 'error',
+      completed: true,
       message: `Error: ${error.message}`,
       summary: `Claude implementation failed: ${error.message}`
     });
@@ -327,11 +328,43 @@ async function runClaudeImplementation(taskId, workingDir, changeId, logFilePath
   }
 }
 
+// Helper to recursively get all files in a directory
+async function getAllFiles(dirPath) {
+  const entries = await fsPromises.readdir(dirPath, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
+    if (entry.name === '.git' || entry.name === '.claude' || entry.name === 'node_modules') continue;
+    if (entry.isDirectory()) {
+      files.push(...await getAllFiles(fullPath));
+    } else {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+// Helper to calculate file hashes
+async function calculateFileHashes(dirPath) {
+  const crypto = require('crypto');
+  const files = await getAllFiles(dirPath);
+  const hashes = new Map();
+
+  for (const file of files) {
+    const content = await fsPromises.readFile(file);
+    const hash = crypto.createHash('sha1').update(content).digest('hex');
+    const relativePath = path.relative(dirPath, file).replace(/\\/g, '/');
+    hashes.set(relativePath, { hash, fullPath: file });
+  }
+
+  return hashes;
+}
+
 // OpenSpec implementation workflow
 async function runOpenSpecImplementation(taskId, repoName, zipPath) {
   const githubApp = new GitHubApp();
   const logFilePath = path.join(__dirname, '..', 'openspec-implementation.log');
-  
+
   // Function to log operations
   const logOperation = async (message) => {
     const timestamp = new Date().toISOString();
@@ -343,7 +376,6 @@ async function runOpenSpecImplementation(taskId, repoName, zipPath) {
     }
   };
 
-  let workingDir = null;
   let tempDir = null;
 
   try {
@@ -355,56 +387,73 @@ async function runOpenSpecImplementation(taskId, repoName, zipPath) {
     await validateOpenSpecZip(zipPath);
     await logOperation('OpenSpec zip validation passed');
 
-    taskManager.updateTask(taskId, { step: 'cloning', message: 'Cloning repository...' });
-    await logOperation('Starting repository clone');
+    taskManager.updateTask(taskId, { step: 'preparation', message: 'Preparing repository...' });
+    await logOperation('Starting repository preparation');
 
-    // Create a temporary directory for the working copy
-    const repoOwner = process.env.GITHUB_USERNAME || 'lee-liao';
-    tempDir = path.join(__dirname, '..', 'temp', `repo_${Date.now()}`);
-    await fsPromises.mkdir(tempDir, { recursive: true });
+    const repoOwner = process.env.GITHUB_REPO_OWNER;
+    if (!repoOwner) {
+      throw new Error('GITHUB_REPO_OWNER environment variable is required but not set.');
+    }
 
-    // Clone the repository
-    const repoUrl = `https://github.com/${repoOwner}/${repoName}.git`;
-    const cloneResult = await execAsync(`git clone "${repoUrl}" "${tempDir}"`);
-    await logOperation(`Repository cloned successfully: ${repoName}`);
+    // Verify that the GitHub App is installed for this owner
+    const installationId = installationStorage.getInstallationId(repoOwner) || installationStorage.getInstallationId(parseInt(repoOwner));
+    if (!installationId) {
+      // Check fallback environment variable
+      if (!process.env.GITHUB_INSTALLATION_ID) {
+        throw new Error(`GitHub App not installed for owner: ${repoOwner}. The app must be installed in the ${repoOwner} account.`);
+      }
+      await logOperation(`Using fallback installation ID from environment for owner: ${repoOwner}`);
+    } else {
+      await logOperation(`Found persistent installation mapping for owner: ${repoOwner}`);
+    }
 
     // Extract change ID from the zip file name or contents
     const zipFileName = path.basename(zipPath);
-    const changeId = path.parse(zipFileName).name; // This might need adjustment based on actual zip naming
-    
-    // Remove Unix timestamp from changeId and reformat (e.g., "1763670523665_update-hello-world-to-loaded" -> "update-hello-world-to-loaded_1763670523665")
+    const changeId = path.parse(zipFileName).name;
+
+    // Remove Unix timestamp from changeId and reformat
     const parts = changeId.split('_');
-    let formattedChangeId = changeId; // Default to original if not in expected format
-    let cleanChangeIdForBranch = changeId; // For use in branch name
+    let formattedChangeId = changeId;
+    let cleanChangeIdForBranch = changeId;
     if (parts.length >= 2 && /^\d+$/.test(parts[0])) {
-      // If first part is numeric (timestamp), reformat to put timestamp at the end
       const timestamp = parts[0];
       const description = parts.slice(1).join('_');
       formattedChangeId = `${description}_${timestamp}`;
-      cleanChangeIdForBranch = description; // Use just the description part for branch name
+      cleanChangeIdForBranch = description;
     }
-    
-    // Create feature branch name with clean changeId and datetime
+
+    // Create feature branch name
     const branchName = `feature/${cleanChangeIdForBranch}+${new Date().toISOString().replace(/[:.]/g, '-')}`;
     taskManager.updateTask(taskId, { step: 'branch-creation', message: `Creating feature branch: ${branchName}` });
     await logOperation(`Creating feature branch: ${branchName}`);
-    
-    // Create and switch to the feature branch
-    await execAsync(`git checkout -b "${branchName}"`, { cwd: tempDir });
+
+    // Create branch via API
+    await githubApp.createBranch(repoOwner, repoName, branchName, 'main');
     await logOperation(`Feature branch created: ${branchName}`);
+
+    // Create temp directory
+    tempDir = path.join(__dirname, '..', 'temp', `repo_${Date.now()}`);
+    await fsPromises.mkdir(tempDir, { recursive: true });
+    console.log(`[DEBUG] Temporary working directory: ${tempDir}`);
+
+    // Download repository via API
+    taskManager.updateTask(taskId, { step: 'downloading', message: 'Downloading repository...' });
+    await logOperation('Downloading repository archive');
+    await githubApp.downloadRepository(repoOwner, repoName, branchName, tempDir);
+
+    // Snapshot initial state
+    const initialHashes = await calculateFileHashes(tempDir);
 
     // Create changes directory structure and unzip the OpenSpec change
     taskManager.updateTask(taskId, { step: 'unzipping', message: 'Unzipping OpenSpec change...' });
     await logOperation('Creating changes directory structure and unzipping OpenSpec change');
-    
-    // Ensure the changes directory exists under openspec
+
     const changesTargetDir = path.join(tempDir, 'openspec', 'changes');
     await fsPromises.mkdir(changesTargetDir, { recursive: true });
-    
-    // Extract the zip file to a temporary location first
+
     const tempExtractDir = path.join(tempDir, 'temp-extract');
     await fsPromises.mkdir(tempExtractDir, { recursive: true });
-    
+
     // Unzip to temporary location
     await new Promise((resolve, reject) => {
       fs.createReadStream(zipPath)
@@ -412,14 +461,10 @@ async function runOpenSpecImplementation(taskId, repoName, zipPath) {
         .on('close', resolve)
         .on('error', reject);
     });
-    
+
     // Check the extracted content structure
     const extractedContents = await fsPromises.readdir(tempExtractDir);
-    
-    // Determine the source directory for the changes
     let sourceDir = tempExtractDir;
-    
-    // If the zip contains a single top-level directory, use that as source
     if (extractedContents.length === 1) {
       const singleItemPath = path.join(tempExtractDir, extractedContents[0]);
       const stat = await fsPromises.stat(singleItemPath);
@@ -427,7 +472,7 @@ async function runOpenSpecImplementation(taskId, repoName, zipPath) {
         sourceDir = singleItemPath;
       }
     }
-    
+
     // Copy all extracted content to the changes directory
     const finalContents = await fsPromises.readdir(sourceDir);
     for (const item of finalContents) {
@@ -435,97 +480,101 @@ async function runOpenSpecImplementation(taskId, repoName, zipPath) {
       const destPath = path.join(changesTargetDir, item);
       await fsPromises.cp(sourcePath, destPath, { recursive: true });
     }
-    
+
     // Clean up temporary extraction directory
     await fsPromises.rm(tempExtractDir, { recursive: true, force: true });
 
-    // Check if .claude folder exists, if not initialize Claude
+    // Initialize Claude if needed (skip if not available)
     const claudeDir = path.join(tempDir, '.claude');
     try {
       await fsPromises.access(claudeDir);
-      await logOperation('.claude folder already exists');
     } catch (err) {
       taskManager.updateTask(taskId, { step: 'claude-setup', message: 'Initializing Claude environment...' });
-      await logOperation('Initializing Claude environment');
-      
-      // Try to initialize Claude (this might fail if Claude isn't properly installed)
       try {
         await execAsync('claude init --yes', { cwd: tempDir });
-        await logOperation('Claude environment initialized');
       } catch (initError) {
-        await logOperation(`Claude init failed (this may be OK): ${initError.message}`);
-        // This is not a fatal error - Claude may be set up differently
+        // Ignore if claude CLI is not available
       }
     }
 
-    // Copy OpenSpec prompts to root of working directory
-    taskManager.updateTask(taskId, { step: 'copying-prompts', message: 'Copying OpenSpec prompts...' });
-    await logOperation('Copying OpenSpec prompts to working directory');
-    
+    // Copy OpenSpec prompts
     const promptsSource = path.join(__dirname, '..', 'resources', 'OpenSpec', 'prompts.md');
     const promptsDest = path.join(tempDir, 'prompts.md');
-    
     try {
       await fsPromises.copyFile(promptsSource, promptsDest);
-      await logOperation('OpenSpec prompts copied successfully');
     } catch (copyError) {
-      await logOperation(`Could not copy OpenSpec prompts: ${copyError.message}`);
+      // Ignore
     }
 
     // Run Claude to implement the OpenSpec change
-    taskManager.updateTask(taskId, { step: 'claude-implementation', message: 'Skipping Claude AI implementation for testing...' });
-    await logOperation('Skipping Claude AI implementation for testing...');
-    
-    // await runClaudeImplementation(taskId, tempDir, changeId, logFilePath);
-    // await logOperation('Claude AI implementation completed');
+    taskManager.updateTask(taskId, { step: 'claude-implementation', message: 'Running Claude AI implementation...' });
+    await logOperation('Running Claude AI implementation...');
 
-    // Commit the changes
+    await runClaudeImplementation(taskId, tempDir, changeId, logFilePath);
+    await logOperation('Claude AI implementation completed');
+
+    // Commit changes via API
     taskManager.updateTask(taskId, { step: 'git-commit', message: 'Committing changes...' });
-    await logOperation('Committing changes to feature branch');
-    
-    await execAsync('git add .', { cwd: tempDir });
-    await execAsync(`git commit -m "Implement OpenSpec change: ${formattedChangeId}"`, { cwd: tempDir });
+    await logOperation('Calculating changes and committing...');
 
-    // Push the changes to the feature branch
-    taskManager.updateTask(taskId, { step: 'git-push', message: 'Pushing changes to remote...' });
-    await logOperation('Pushing changes to remote feature branch');
-    
-    await execAsync(`git push origin "${branchName}"`, { cwd: tempDir });
+    const finalHashes = await calculateFileHashes(tempDir);
+    const changedFiles = [];
+
+    for (const [relativePath, data] of finalHashes.entries()) {
+      if (!initialHashes.has(relativePath) || initialHashes.get(relativePath).hash !== data.hash) {
+        const content = await fsPromises.readFile(data.fullPath);
+        // Check if binary (simple check for null bytes or non-printable characters)
+        const isBinary = /[^\x09\x0A\x0D\x20-\x7E]/.test(content.toString('utf8').slice(0, 1000));
+
+        changedFiles.push({
+          path: relativePath,
+          content: isBinary ? content.toString('base64') : content.toString('utf8'),
+          encoding: isBinary ? 'base64' : 'utf-8'
+        });
+      }
+    }
+
+    if (changedFiles.length > 0) {
+      await githubApp.commitChanges(repoOwner, repoName, `Implement OpenSpec change: ${formattedChangeId}`, changedFiles, branchName, 'main');
+      await logOperation(`Committed ${changedFiles.length} changed files`);
+    } else {
+      await logOperation('No changes detected after Claude execution.');
+    }
 
     // Create a pull request from feature branch to main
     taskManager.updateTask(taskId, { step: 'create-pr', message: 'Creating pull request...' });
     await logOperation('Creating pull request from feature branch to main');
-    
+
     const prTitle = `Implement OpenSpec change: ${formattedChangeId}`;
     const prBody = `Automated pull request to implement the OpenSpec change ${formattedChangeId}.\n\nThis PR was automatically generated by the OpenSpec Implementation Agent.`;
-    
+
     const prResult = await githubApp.createPullRequest(
-      repoOwner, 
-      repoName, 
-      prTitle, 
-      prBody, 
-      branchName, 
+      repoOwner,
+      repoName,
+      prTitle,
+      prBody,
+      branchName,
       'main'
     );
-    
+
     await logOperation(`Pull request created successfully: ${prResult.html_url}`);
 
     // Update task status to completed
-    taskManager.updateTask(taskId, { 
-      step: 'completed', 
-      completed: true, 
+    taskManager.updateTask(taskId, {
+      step: 'completed',
+      completed: true,
       message: 'OpenSpec implementation completed successfully!',
       summary: `Successfully implemented OpenSpec change and created PR: ${prResult.html_url}`,
       pullRequestUrl: prResult.html_url
     });
-    
+
     await logOperation('OpenSpec implementation completed successfully');
   } catch (error) {
     console.error('Error in OpenSpec implementation:', error);
     await logOperation(`OpenSpec implementation failed: ${error.message}`);
-    taskManager.updateTask(taskId, { 
-      step: 'error', 
-      completed: true, 
+    taskManager.updateTask(taskId, {
+      step: 'error',
+      completed: true,
       message: `Error: ${error.message}`,
       summary: `OpenSpec implementation failed: ${error.message}`
     });
@@ -561,7 +610,7 @@ router.post('/openspec-implement', async (req, res) => {
     // Create a temporary location to save the file
     const tempPath = path.join(__dirname, '..', 'temp', `${Date.now()}_${zipFile.name}`);
     await fsPromises.mkdir(path.dirname(tempPath), { recursive: true });
-    
+
     // Save the uploaded file
     await zipFile.mv(tempPath);
 
@@ -575,9 +624,9 @@ router.post('/openspec-implement', async (req, res) => {
     setImmediate(() => {
       runOpenSpecImplementation(taskId, repoName, tempPath).catch(error => {
         console.error('Error in background OpenSpec implementation:', error);
-        taskManager.updateTask(taskId, { 
-          step: 'error', 
-          completed: true, 
+        taskManager.updateTask(taskId, {
+          step: 'error',
+          completed: true,
           message: `Error: ${error.message}`,
           summary: `OpenSpec implementation failed: ${error.message}`
         });

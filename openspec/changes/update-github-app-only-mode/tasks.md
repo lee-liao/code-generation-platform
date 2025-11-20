@@ -1,13 +1,13 @@
 ## 1. Implementation
-- [ ] 1.1 Create webhook endpoint to receive installation events
-- [ ] 1.2 Implement webhook verification and security
-- [ ] 1.3 Store installation data in database
-- [ ] 1.4 Build user-to-installation mapping system
-- [ ] 1.5 Update authentication to use installation tokens
-- [ ] 1.6 Remove PAT-based repository creation methods
-- [ ] 1.7 Modify repository selection to use existing repositories
-- [ ] 1.8 Update codebase generation to work within existing repos
-- [ ] 1.9 Implement branch and file operations using GitHub API
-- [ ] 1.10 Add migration path for existing users
-- [ ] 1.11 Update documentation for new authentication flow
-- [ ] 1.12 Maintain current PAT-based functionality during transition
+- [x] 1.1 Create webhook endpoint to receive installation events
+- [x] 1.2 Implement webhook verification and security
+- [x] 1.3 Store installation data in database
+- [x] 1.4 Build user-to-installation mapping system
+- [x] 1.5 Update authentication to use installation tokens
+- [x] 1.6 Remove PAT-based repository creation methods
+- [x] 1.7 Modify repository selection to use existing repositories
+- [x] 1.8 Update codebase generation to work within existing repos
+- [x] 1.9 Implement branch and file operations using GitHub API
+- [x] 1.10 Add migration path for existing users
+- [x] 1.11 Update documentation for new authentication flow
+- [x] 1.12 Maintain current PAT-based functionality during transition

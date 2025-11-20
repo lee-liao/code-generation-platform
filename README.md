@@ -63,7 +63,7 @@ This will delete any repositories with names starting with 'capability-test-', '
 
 - A GitHub App created in your GitHub organization/account
 - Private key for the GitHub App
-- Installation ID of the GitHub App in the target organization
+- The GitHub App must be installed in user/organization accounts (installation ID will be captured via webhooks)
 
 ## Setup
 
@@ -81,9 +81,9 @@ This will delete any repositories with names starting with 'capability-test-', '
 3. Configure environment variables:
    - Copy `.env.example` to `.env`
    - Set `GITHUB_APP_ID` to your GitHub App ID
-   - Set `GITHUB_INSTALLATION_ID` to your GitHub App's installation ID
+   - Initially set `GITHUB_INSTALLATION_ID` for initial setup (will be automatically updated when webhooks receive installation events)
 
-4. For GitHub App authentication, place your private key in the `.keystore` directory (e.g., `.keystore/code-generation-platform.2025-11-16.private-key.pem`)
+4. For GitHub App authentication, place your private key in the `.keystore` directory (e.g., `.keystore/private-key.pem`)
 
 ## Environment Variables
 

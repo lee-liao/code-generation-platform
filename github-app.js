@@ -1,16 +1,40 @@
 const { createAppAuth } = require('@octokit/auth-app');
 const { Octokit } = require('@octokit/rest');
+const fs = require('fs');
+const installationStorage = require('./utils/installation-storage'); // Import installation storage
 
 class GitHubApp {
   constructor() {
     // Initialize GitHub App authentication
     this.appAuth = createAppAuth({
       appId: process.env.GITHUB_APP_ID,
-      privateKey: require('fs').readFileSync(process.env.GITHUB_PRIVATE_KEY_PATH, 'utf-8'),
+      privateKey: fs.readFileSync(process.env.GITHUB_PRIVATE_KEY_PATH, 'utf-8'),
     });
-    
+
     // Initialize Octokit instance
     this.octokit = new Octokit();
+  }
+
+  // Get the installation ID for a specific owner (user/organization)
+  getInstallationIdForOwner(owner) {
+    // Try to get installation ID from the persistent storage first
+    let installationId = installationStorage.getInstallationId(owner);
+
+    // If not found and owner is a number (account ID), try to parse it
+    if (!installationId && typeof owner === 'number') {
+      installationId = installationStorage.getInstallationId(owner.toString());
+    }
+
+    // Fall back to environment variable for backward compatibility during transition
+    if (!installationId) {
+      installationId = process.env.GITHUB_INSTALLATION_ID;
+    }
+
+    if (!installationId) {
+      throw new Error(`No installation ID found for owner: ${owner}. The GitHub App must be installed in the ${owner} account.`);
+    }
+
+    return installationId;
   }
 
   // Get authenticated GitHub client for a specific installation
@@ -19,20 +43,36 @@ class GitHubApp {
       type: "installation",
       installationId: installationId,
     });
-    
+
     return new Octokit({
       auth: auth.token,
     });
   }
 
-  // Create a new repository using personal access token
+  // Get authenticated GitHub client for a specific owner (user/organization)
+  async getGitHubClientForOwner(owner) {
+    const installationId = this.getInstallationIdForOwner(owner);
+    return this.getGitHubClient(installationId);
+  }
+
+  // Create a new repository using GitHub App installation token (for repositories the app has access to)
   async createRepository(owner, name, description = '', isPrivate = false) {
-    // Check if personal access token is available for repository creation
-    if (process.env.GITHUB_PERSONAL_ACCESS_TOKEN) {
-      const github = new Octokit({
-        auth: process.env.GITHUB_PERSONAL_ACCESS_TOKEN,
+    const installationId = this.getInstallationIdForOwner(owner);
+
+    const github = await this.getGitHubClient(installationId);
+
+    try {
+      const response = await github.repos.createInOrg({
+        org: owner,
+        name: name,
+        description: description,
+        private: isPrivate,
       });
 
+      console.log(`Repository created: ${response.data.html_url}`);
+      return response.data;
+    } catch (error) {
+      // If createInOrg fails, try with user account
       try {
         const response = await github.repos.createForAuthenticatedUser({
           name: name,
@@ -42,20 +82,17 @@ class GitHubApp {
 
         console.log(`Repository created: ${response.data.html_url}`);
         return response.data;
-      } catch (error) {
-        console.error('Error creating repository with personal access token:', error.message);
-        throw error;
+      } catch (error2) {
+        console.error('Error creating repository with GitHub App installation token:', error.message);
+        console.error('Also failed with createForAuthenticatedUser:', error2.message);
+        throw new Error('Unable to create repository using GitHub App. The app must be installed in the organization/user account and have repository creation permissions.');
       }
-    } else {
-      console.error('GITHUB_PERSONAL_ACCESS_TOKEN is not set in environment variables');
-      throw new Error('GITHUB_PERSONAL_ACCESS_TOKEN is required for repository creation');
     }
   }
 
   // Create a new branch
   async createBranch(owner, repo, branchName, sourceBranch = 'main') {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
+    const github = await this.getGitHubClientForOwner(owner);
 
     try {
       // Get the reference of the source branch
@@ -70,7 +107,7 @@ class GitHubApp {
         if (refError.message.includes('Git Repository is empty')) {
           // If the repository is empty, we need to handle this special case
           console.log(`Repository is empty, initializing with a default file first...`);
-          
+
           // Add a default file to initialize the repository
           const defaultFileResponse = await this.addFile(
             owner,
@@ -80,7 +117,7 @@ class GitHubApp {
             sourceBranch,
             'Initial commit: Add README'
           );
-          
+
           // Now try to get the reference again
           sourceRef = await github.git.getRef({
             owner,
@@ -127,8 +164,7 @@ class GitHubApp {
 
   // Add a file to repository
   async addFile(owner, repo, filePath, content, branch = 'main', commitMessage = 'Add file via API') {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
+    const github = await this.getGitHubClientForOwner(owner);
 
     try {
       // Try to get the file to check if it exists (for updating)
@@ -163,7 +199,7 @@ class GitHubApp {
 
       const response = await github.repos.createOrUpdateFileContents(params);
 
-      console.log(`File ${existingFile ? 'updated' : 'created'}: ${filePath}`);
+      console.log(`${existingFile ? 'File updated' : 'File created'}: ${filePath}`);
       return response.data;
     } catch (error) {
       console.error('Error adding file:', error.message);
@@ -173,8 +209,7 @@ class GitHubApp {
 
   // Commit changes (often combined with addFile in practice)
   async commitChanges(owner, repo, commitMessage, files, branch = 'main', parentBranch = 'main') {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
+    const github = await this.getGitHubClientForOwner(owner);
 
     try {
       // Get the latest commit SHA from the parent branch
@@ -193,6 +228,7 @@ class GitHubApp {
           owner,
           repo,
           content: file.content,
+          encoding: file.encoding || 'utf-8',
         });
 
         treeItems.push({
@@ -250,8 +286,7 @@ class GitHubApp {
 
   // Create a pull request
   async createPullRequest(owner, repo, title, body, head, base = 'main') {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
+    const github = await this.getGitHubClientForOwner(owner);
 
     try {
       const response = await github.pulls.create({
@@ -270,35 +305,40 @@ class GitHubApp {
       throw error;
     }
   }
-  
+
   // Get installation information
-  async getInstallationInfo() {
+  async getInstallationInfo(installationId = null) {
+    const targetInstallationId = installationId || process.env.GITHUB_INSTALLATION_ID;
+
+    if (!targetInstallationId) {
+      throw new Error('No installation ID provided and GITHUB_INSTALLATION_ID environment variable not set');
+    }
+
     // For getting installation info, we need app-level authentication, not installation-level
     const auth = await this.appAuth({
       type: "app",
     });
-    
+
     const github = new Octokit({
       auth: auth.token,
     });
 
     try {
       const response = await github.apps.getInstallation({
-        installation_id: process.env.GITHUB_INSTALLATION_ID
+        installation_id: targetInstallationId
       });
-      
-      console.log(`Installation info:`, response.data);
+
+      console.log(`Installation info for ID ${targetInstallationId}:`, response.data);
       return response.data;
     } catch (error) {
-      console.error('Error getting installation info:', error.message);
+      console.error(`Error getting installation info for ID ${targetInstallationId}:`, error.message);
       throw error;
     }
   }
-  
+
   // Get all branches from a repository (pull operation)
   async getBranches(owner, repo) {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
+    const github = await this.getGitHubClientForOwner(owner);
 
     try {
       const response = await github.repos.listBranches({
@@ -314,11 +354,10 @@ class GitHubApp {
       throw error;
     }
   }
-  
+
   // Get a specific branch
   async getBranch(owner, repo, branchName) {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
+    const github = await this.getGitHubClientForOwner(owner);
 
     try {
       const response = await github.repos.getBranch({
@@ -334,11 +373,10 @@ class GitHubApp {
       throw error;
     }
   }
-  
+
   // Get repository information
   async getRepository(owner, repo) {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
+    const github = await this.getGitHubClientForOwner(owner);
 
     try {
       const response = await github.repos.get({
@@ -353,36 +391,33 @@ class GitHubApp {
       throw error;
     }
   }
-  
-  // Delete a repository
+
+  // Delete a repository using GitHub App installation token
   async deleteRepository(owner, repo) {
-    if (process.env.GITHUB_PERSONAL_ACCESS_TOKEN) {
-      const github = new Octokit({
-        auth: process.env.GITHUB_PERSONAL_ACCESS_TOKEN,
+    const installationId = process.env.GITHUB_INSTALLATION_ID;
+    if (!installationId) {
+      throw new Error('GITHUB_INSTALLATION_ID is not set in environment variables');
+    }
+
+    const github = await this.getGitHubClient(installationId);
+
+    try {
+      const response = await github.repos.delete({
+        owner,
+        repo,
       });
 
-      try {
-        const response = await github.repos.delete({
-          owner,
-          repo,
-        });
-
-        console.log(`Repository deleted: ${owner}/${repo}`);
-        return response;
-      } catch (error) {
-        console.error('Error deleting repository with personal access token:', error.message);
-        throw error;
-      }
-    } else {
-      console.error('GITHUB_PERSONAL_ACCESS_TOKEN is not set in environment variables');
-      throw new Error('GITHUB_PERSONAL_ACCESS_TOKEN is required for repository deletion');
+      console.log(`Repository deleted: ${owner}/${repo}`);
+      return response;
+    } catch (error) {
+      console.error('Error deleting repository with GitHub App installation token:', error.message);
+      throw error;
     }
   }
-  
+
   // Get repository contents
   async getContents(owner, repo, path = '', ref = 'main') {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
+    const github = await this.getGitHubClientForOwner(owner);
 
     try {
       const response = await github.repos.getContent({
@@ -399,11 +434,10 @@ class GitHubApp {
       throw error;
     }
   }
-  
+
   // Compare two commits
   async compareCommits(owner, repo, base, head) {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
+    const github = await this.getGitHubClientForOwner(owner);
 
     try {
       const response = await github.repos.compareCommits({
@@ -420,11 +454,10 @@ class GitHubApp {
       throw error;
     }
   }
-  
+
   // Get commit information
   async getCommit(owner, repo, ref) {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    const github = await this.getGitHubClient(installationId);
+    const github = await this.getGitHubClientForOwner(owner);
 
     try {
       const response = await github.repos.getCommit({
@@ -437,6 +470,32 @@ class GitHubApp {
       return response.data;
     } catch (error) {
       console.error('Error getting commit info:', error.message);
+      throw error;
+    }
+  }
+  // Download repository archive
+  async downloadRepository(owner, repo, ref, targetDir) {
+    const github = await this.getGitHubClientForOwner(owner);
+    const unzipper = require('unzipper');
+
+    try {
+      const response = await github.repos.downloadZipballArchive({
+        owner,
+        repo,
+        ref,
+      });
+
+      // response.data is an ArrayBuffer
+      const buffer = Buffer.from(response.data);
+
+      // Unzip
+      const directory = await unzipper.Open.buffer(buffer);
+      await directory.extract({ path: targetDir });
+
+      console.log(`Repository downloaded to: ${targetDir}`);
+      return targetDir;
+    } catch (error) {
+      console.error('Error downloading repository:', error.message);
       throw error;
     }
   }

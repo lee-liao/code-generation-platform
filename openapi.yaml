@@ -25,7 +25,7 @@ paths:
   /create-repo:
     post:
       summary: Create a new GitHub repository
-      description: Creates a new GitHub repository using a personal access token
+      description: Creates a new GitHub repository using GitHub App installation token. The GitHub App must be installed in the specified owner's account.
       requestBody:
         required: true
         content:
@@ -35,7 +35,7 @@ paths:
               properties:
                 owner:
                   type: string
-                  description: Repository owner (username or organization)
+                  description: Repository owner (username or organization). The GitHub App must be installed in this account.
                   example: "username"
                 name:
                   type: string
@@ -76,7 +76,7 @@ paths:
                 properties:
                   error:
                     type: string
-                    example: "GITHUB_PERSONAL_ACCESS_TOKEN is required for repository creation"
+                    example: "GITHUB_INSTALLATION_ID is required for repository creation"
   /create-branch:
     post:
       summary: Create a new branch in a repository

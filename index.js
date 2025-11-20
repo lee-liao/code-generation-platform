@@ -6,16 +6,17 @@ const path = require('path');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const { GitHubApp } = require('./github-app');
+const installationStorage = require('./utils/installation-storage'); // Import installation storage
 const codebaseGenerationRouter = require('./routes/codebase-generation');
-const gitOperationsRouter = require('./routes/git-operations');
 const claudeTestRouter = require('./routes/claude-test');
 const openspecImplementationAgentRouter = require('./routes/openspec-implementation-agent');
+const openspecWorkflowRouter = require('./routes/openspec-workflow');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
 // Middleware to parse raw body for webhook verification
-app.use('/webhook', express.raw({type: 'application/json'}));
+app.use('/webhook', express.raw({ type: 'application/json' }));
 
 // Parse JSON bodies for other routes
 app.use(express.json());
@@ -88,7 +89,7 @@ app.post('/webhook', (req, res) => {
       .createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET)
       .update(body)
       .digest('hex');
-    
+
     if (signature !== expectedSignature) {
       console.error('Webhook signature verification failed');
       return res.status(400).send('Invalid signature');
@@ -106,37 +107,60 @@ app.post('/webhook', (req, res) => {
       const installationAction = req.body.action;
       const installationId = req.body.installation?.id;
       const accountLogin = req.body.installation?.account?.login;
-      
-      console.log(`Installation ${installationAction} event for account: ${accountLogin}, ID: ${installationId}`);
-      
-      // Store installation ID in environment for testing, in production use a database
+      const accountId = req.body.installation?.account?.id;
+
+      console.log(`Installation ${installationAction} event for account: ${accountLogin}, ID: ${installationId}, Account ID: ${accountId}`);
+
       if (installationAction === 'created') {
+        // Store the account to installation ID mapping persistently
+        installationStorage.updateInstallation(accountLogin, installationId);
+        installationStorage.updateInstallation(accountId, installationId);
+        console.log(`Mapped account ${accountLogin} (ID: ${accountId}) to installation ID: ${installationId}`);
+
+        // Also store the most recent installation ID for backwards compatibility during transition
         process.env.GITHUB_INSTALLATION_ID = installationId;
-        console.log(`Stored installation ID: ${installationId}`);
+      } else if (installationAction === 'deleted') {
+        // Remove the mapping when the installation is deleted
+        installationStorage.removeInstallation(accountLogin);
+        installationStorage.removeInstallation(accountId);
+        console.log(`Removed mapping for account ${accountLogin} (ID: ${accountId})`);
       }
       break;
-      
+
     case 'installation_repositories':
       // Handle repository addition/removal from installation
       const repositoriesAction = req.body.action;
-      console.log(`Repository ${repositoriesAction} event for installation: ${req.body.installation?.id}`);
+      const installationIdRepo = req.body.installation?.id;
+      console.log(`Repository ${repositoriesAction} event for installation: ${installationIdRepo}`);
+
+      // Update installation mapping if needed
+      const repoAccountLogin = req.body.installation?.account?.login;
+      const repoAccountId = req.body.installation?.account?.id;
+      if (repoAccountLogin && installationIdRepo) {
+        installationStorage.updateInstallation(repoAccountLogin, installationIdRepo);
+      }
+      if (repoAccountId && installationIdRepo) {
+        installationStorage.updateInstallation(repoAccountId, installationIdRepo);
+      }
       break;
-      
+
     case 'push':
       // Handle push events
       const repoName = req.body.repository?.name;
       const ref = req.body.ref;
-      console.log(`Push event for repository: ${repoName}, ref: ${ref}`);
+      const pusherLogin = req.body.pusher?.name;
+      console.log(`Push event for repository: ${repoName}, ref: ${ref}, pusher: ${pusherLogin}`);
       break;
-      
+
     case 'pull_request':
       // Handle pull request events
       const prAction = req.body.action;
       const prNumber = req.body.number;
       const prRepo = req.body.repository?.name;
-      console.log(`Pull request ${prAction} event for PR #${prNumber} in ${prRepo}`);
+      const prUserLogin = req.body.sender?.login;
+      console.log(`Pull request ${prAction} event for PR #${prNumber} in ${prRepo} by ${prUserLogin}`);
       break;
-      
+
     default:
       console.log(`Unhandled webhook event: ${event}`);
       break;
@@ -202,11 +226,23 @@ app.post('/webhook', (req, res) => {
  *               properties:
  *                 error:
  *                   type: string
- *                   example: "GITHUB_PERSONAL_ACCESS_TOKEN is required for repository creation"
+ *                   example: "GITHUB_INSTALLATION_ID is required for repository creation"
  */
 app.post('/create-repo', async (req, res) => {
   try {
     const { owner, name, description, isPrivate = false } = req.body;
+
+    // Verify that the GitHub App is installed for this owner using persistent storage
+    const installationId = installationStorage.getInstallationId(owner) || installationStorage.getInstallationId(parseInt(owner));
+    if (!installationId) {
+      // Try with the environment installation ID as fallback during transition
+      if (!process.env.GITHUB_INSTALLATION_ID) {
+        return res.status(400).json({
+          error: `GitHub App not installed for owner: ${owner}. The app must be installed in the ${owner} account.`
+        });
+      }
+    }
+
     const result = await githubApp.createRepository(owner, name, description, isPrivate);
     res.json(result);
   } catch (error) {
@@ -439,12 +475,12 @@ app.post('/create-pull-request', async (req, res) => {
 });
 
 // Endpoint to get installation information
-/**
+/** 
  * @swagger
  * /installation-info:
  *   get:
  *     summary: Get GitHub App installation information
- *     description: Retrieves information about the GitHub App installation
+ *     description: Retrieves information about the GitHub App installation for the authenticated user
  *     responses:
  *       200:
  *         description: Installation information retrieved successfully
@@ -480,6 +516,96 @@ app.get('/installation-info', async (req, res) => {
   try {
     const result = await githubApp.getInstallationInfo();
     res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint to check user installation status
+/**
+ * @swagger
+ * /user-installation-status:
+ *   get:
+ *     summary: Check user's GitHub App installation status
+ *     description: Checks if the GitHub App is installed in the user's account
+ *     parameters:
+ *       - in: query
+ *         name: owner
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Repository owner (username or organization) to check installation for
+ *         example: "username"
+ *     responses:
+ *       200:
+ *         description: Installation status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 isInstalled:
+ *                   type: boolean
+ *                   example: true
+ *                 installationId:
+ *                   type: string
+ *                   example: "123456"
+ *                 message:
+ *                   type: string
+ *                   example: "GitHub App is installed for this user"
+ *       400:
+ *         description: Owner parameter is required
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Owner parameter is required"
+ *       500:
+ *         description: Error checking installation status
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Error message describing what went wrong"
+ */
+app.get('/user-installation-status', async (req, res) => {
+  try {
+    const { owner } = req.query;
+    if (!owner) {
+      return res.status(400).json({ error: 'Owner parameter is required' });
+    }
+
+    // Check if installation exists for this owner using persistent storage
+    const installationId = installationStorage.getInstallationId(owner) || installationStorage.getInstallationId(parseInt(owner));
+
+    if (installationId) {
+      res.json({
+        isInstalled: true,
+        installationId,
+        message: `GitHub App is installed for ${owner}`
+      });
+    } else {
+      // Check fallback environment variable
+      if (process.env.GITHUB_INSTALLATION_ID) {
+        res.json({
+          isInstalled: true,
+          installationId: process.env.GITHUB_INSTALLATION_ID,
+          message: `GitHub App installation ID available via environment variable for ${owner} (transition mode)`
+        });
+      } else {
+        res.json({
+          isInstalled: false,
+          installationId: null,
+          message: `GitHub App is not installed for ${owner}`
+        });
+      }
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1002,9 +1128,6 @@ app.get('/commit-info', async (req, res) => {
 
 // Codebase generation routes
 app.use('/', codebaseGenerationRouter);
-
-// Git operations routes  
-app.use('/git', gitOperationsRouter); // Put git operations under /git prefix to avoid conflicts
 
 // OpenSpec implementation agent routes
 app.use('/openspec', openspecImplementationAgentRouter); // Put OpenSpec implementation routes under /openspec prefix

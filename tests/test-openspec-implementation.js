@@ -104,7 +104,10 @@ async function testOpenSpecImplementation() {
         
         console.log('\n2. Testing repository clone...');
         // Test cloning the repository
-        const repoOwner = process.env.GITHUB_USERNAME || 'lee-liao';
+        const repoOwner = process.env.GITHUB_REPO_OWNER;
+        if (!repoOwner) {
+          throw new Error('GITHUB_REPO_OWNER environment variable is required but not set.');
+        }
         const repoUrl = `https://github.com/${repoOwner}/${repoName}.git`;
         console.log(`Attempting to clone: ${repoUrl}`);
         

@@ -1,12 +1,10 @@
 const express = require('express');
-const { exec, spawn, execSync } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const { promisify } = require('util');
 const fs = require('fs').promises;
 const path = require('path');
 const { GitHubApp } = require('../github-app');
 const { Anthropic } = require('@anthropic-ai/sdk');
-
-const execAsync = promisify(exec);
 
 const router = express.Router();
 
@@ -100,7 +98,11 @@ async function checkRepoExists(repoName, githubApp) {
   try {
     // For this check we'll assume we're using the current user's account
     // In practice, this would need to be configured
-    await githubApp.getRepository(process.env.GITHUB_USERNAME || 'lee-liao', repoName);
+    const repoOwner = process.env.GITHUB_REPO_OWNER;
+    if (!repoOwner) {
+      throw new Error('GITHUB_REPO_OWNER environment variable is required but not set.');
+    }
+    await githubApp.getRepository(repoOwner, repoName);
     return true;
   } catch (error) {
     // If we get an error, the repo likely doesn't exist
@@ -117,7 +119,7 @@ async function checkRepoExists(repoName, githubApp) {
 async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescription, snippetsPath, verboseLogging = false) {
   const githubApp = new GitHubApp();
   const logFilePath = path.join(__dirname, '..', 'codebase-generation.log');
-  
+
   // Function to log operations
   const logOperation = async (message) => {
     const timestamp = new Date().toISOString();
@@ -128,56 +130,56 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
       console.error('Error writing to log file:', error);
     }
   };
-  
+
   try {
     await logOperation('Starting codebase generation task');
     taskManager.updateTask(taskId, { step: 'validation', message: 'Validating inputs...' });
-    
+
     // Validate inputs
     await logOperation('Validating inputs');
     await validateInputs(projectFolder, repoName, githubApp);
     await logOperation('Input validation passed');
-    
+
     taskManager.updateTask(taskId, { step: 'copying', message: 'Copying project template...' });
     await logOperation('Copying project template from ' + projectFolder + ' to ' + path.join(path.dirname(projectFolder), repoName));
-    
+
     // Copy project folder to new location
     const parentDir = path.dirname(projectFolder);
     const newProjectPath = path.join(parentDir, repoName);
     await copyDirectory(projectFolder, newProjectPath);
-    
+
     taskManager.updateTask(taskId, { step: 'claude-processing', message: 'Running Claude AI processing...' });
     await logOperation('Starting Claude AI processing');
-    
+
     // Run Claude command in the new directory for file system operations
     const claudeCommand = 'claude -p --permission-mode bypassPermissions "Read the OpenSpec requirement documents at openspec/changes/add-snippet-web-assembly and implement the specification. Create the required files and directories as specified in the OpenSpec document. After implementation, verify the new created files fulfill the requirements."';
-    
+
     // Change to the new project directory to run the command
     const originalCwd = process.cwd();
     try {
       // Set environment based on verbose logging setting
-      const environment = { ...process.env, GITHUB_USERNAME: process.env.GITHUB_USERNAME };
+      const environment = { ...process.env, GITHUB_REPO_OWNER: process.env.GITHUB_REPO_OWNER };
       if (verboseLogging) {
         environment.ANTHROPIC_LOG = 'debug';
       }
-      
+
       // Change to the project directory
       process.chdir(newProjectPath);
-      
+
       try {
         // Check if Claude CLI is available by attempting to run a simple command
         const { execSync } = require('child_process');
-        
+
         // Instead of relying on PATH, let's try a different approach
         // We'll attempt to run the command directly and handle the error
         // First, run the availability check in a broader context
         let claudeAvailable = false;
-        
+
         try {
-          execSync('cmd /c claude --version', { 
-            stdio: 'pipe', 
+          execSync('cmd /c claude --version', {
+            stdio: 'pipe',
             env: environment,
-            cwd: newProjectPath 
+            cwd: newProjectPath
           });
           claudeAvailable = true;
         } catch (availabilityCheckError) {
@@ -187,12 +189,12 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
             ...environment,
             PATH: `${process.env.PATH || ''};${process.env.USERPROFILE || process.env.HOMEPATH}\\AppData\\Roaming\\npm;D:\\Users\\liao_\\AppData\\Roaming\\npm;C:\\Users\\%USERNAME%\\AppData\\Roaming\\npm`
           };
-          
+
           try {
-            execSync('cmd /c claude --version', { 
-              stdio: 'pipe', 
+            execSync('cmd /c claude --version', {
+              stdio: 'pipe',
               env: enhancedEnv,
-              cwd: newProjectPath 
+              cwd: newProjectPath
             });
             claudeAvailable = true;
             // If this succeeds, update the environment for the actual command
@@ -201,10 +203,10 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
             console.log('Second Claude availability check also failed');
             // Try a direct path approach
             try {
-              execSync('cmd /c "D:\\Users\\liao_\\AppData\\Roaming\\npm\\claude.cmd" --version', { 
-                stdio: 'pipe', 
+              execSync('cmd /c "D:\\Users\\liao_\\AppData\\Roaming\\npm\\claude.cmd" --version', {
+                stdio: 'pipe',
                 env: environment,
-                cwd: newProjectPath 
+                cwd: newProjectPath
               });
               claudeAvailable = true;
               // Update PATH to include Claude's installation directory
@@ -218,46 +220,46 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
             }
           }
         }
-        
+
         if (!claudeAvailable) {
           throw new Error('Claude CLI not found after all attempts');
         }
-        
+
         // Claude CLI is available, proceed with the command
         await new Promise((resolve, reject) => {
           // Use the enhanced environment that we know works
           const finalEnvironment = { ...environment };
-          
+
           const childProcess = spawn('cmd', ['/c', claudeCommand], {
             cwd: newProjectPath,
             env: finalEnvironment,
             stdio: ['pipe', 'pipe', 'pipe'], // Use pipe for stdin to prevent hanging
             windowsHide: true
           });
-          
+
           // Track the process in the task manager
           taskManager.updateProcessInfo(taskId, {
             pid: childProcess.pid,
             status: 'running',
             startTime: new Date()
           });
-          
+
           let stdout = '';
           let stderr = '';
-          
+
           childProcess.stdout.on('data', (data) => {
             stdout += data.toString();
           });
-          
+
           childProcess.stderr.on('data', (data) => {
             stderr += data.toString();
           });
-          
+
           // Write empty input to stdin to prevent hanging on prompts
           if (childProcess.stdin) {
             childProcess.stdin.end();
           }
-          
+
           // Increase timeout to 5 minutes to allow Claude to complete properly
           const timeoutId = setTimeout(() => {
             if (!childProcess.killed) {
@@ -271,18 +273,18 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
               reject(new Error('Claude AI processing timed out after 5 minutes. Process was terminated.'));
             }
           }, 300000); // 5 minutes timeout
-          
+
           childProcess.on('close', (code) => {
             // Clear the timeout since the process has already completed
             clearTimeout(timeoutId);
-            
+
             taskManager.updateProcessInfo(taskId, {
               pid: childProcess.pid,
               status: 'completed',
               exitCode: code,
               endTime: new Date()
             });
-            
+
             if (code === 0) {
               // Save Claude output to file
               let outputContent = `Stdout:\n${stdout}\n\nStderr:\n${stderr}\n\nCommand executed: ${claudeCommand}\nExit code: ${code}`;
@@ -292,9 +294,9 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
               fs.writeFile(path.join(newProjectPath, 'claude output.txt'), outputContent)
                 .then(() => {
                   logOperation('Claude AI processing completed successfully. Output saved to claude output.txt');
-                  taskManager.updateTask(taskId, { 
-                    step: 'claude-processing-complete', 
-                    message: 'Claude processing completed. Proceeding to Git setup...' 
+                  taskManager.updateTask(taskId, {
+                    step: 'claude-processing-complete',
+                    message: 'Claude processing completed. Proceeding to Git setup...'
                   });
                   resolve();
                 })
@@ -309,18 +311,18 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
               }
               logOperation(`Claude command failed with exit code ${code}`);
               const error = new Error(`Claude command failed with exit code ${code}.\nOutput: ${errorOutput}`);
-              taskManager.updateTask(taskId, { 
-                step: 'claude-processing-error', 
-                message: `Claude processing failed with exit code: ${code}` 
+              taskManager.updateTask(taskId, {
+                step: 'claude-processing-error',
+                message: `Claude processing failed with exit code: ${code}`
               });
               reject(error);
             }
           });
-          
+
           childProcess.on('error', (error) => {
             // Clear the timeout since the process has erred
             clearTimeout(timeoutId);
-            
+
             taskManager.updateProcessInfo(taskId, {
               pid: childProcess.pid,
               status: 'error',
@@ -328,9 +330,9 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
               endTime: new Date()
             });
             logOperation(`Claude command error: ${error.message}`);
-            taskManager.updateTask(taskId, { 
-              step: 'claude-processing-error', 
-              message: `Claude processing error: ${error.message}` 
+            taskManager.updateTask(taskId, {
+              step: 'claude-processing-error',
+              message: `Claude processing error: ${error.message}`
             });
             reject(error);
           });
@@ -338,48 +340,48 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
       } catch (error) {
         // Claude CLI is not available, log and update task status
         await logOperation(`Claude CLI not found on system. Error: ${error.message}`);
-        taskManager.updateTask(taskId, { 
-          step: 'claude-processing-error', 
-          message: `Claude CLI not available: ${error.message}` 
+        taskManager.updateTask(taskId, {
+          step: 'claude-processing-error',
+          message: `Claude CLI not available: ${error.message}`
         });
-        
+
         // Create a placeholder output file to indicate that Claude was skipped
         let outputContent = `Claude AI processing was skipped because Claude CLI is not installed or not in PATH.\n\nError: ${error.message}\n\nCommand that would have been executed: ${claudeCommand}\n\nTo enable Claude processing, please install Claude CLI from Anthropic.`;
         if (verboseLogging) {
           outputContent += '\nVerbose logging was enabled but Claude CLI not available.';
         }
         await fs.writeFile(path.join(newProjectPath, 'claude output.txt'), outputContent);
-        
+
         // Throw error to prevent proceeding to Git operations
         throw error;
       }
     } finally {
       process.chdir(originalCwd);
     }
-    
+
     taskManager.updateTask(taskId, { step: 'git-setup', message: 'Setting up Git repository...' });
     await logOperation('Setting up Git repository');
-    
+
     // Initialize Git repository and push to GitHub
     await setupGitAndPush(taskId, newProjectPath, repoName, repoDescription, githubApp);
     await logOperation(`Git setup completed and pushed to GitHub repository: ${repoName}`);
-    
-    taskManager.updateTask(taskId, { 
-      step: 'completed', 
-      completed: true, 
+
+    taskManager.updateTask(taskId, {
+      step: 'completed',
+      completed: true,
       message: 'Codebase generation completed successfully!',
       summary: `Successfully created repository ${repoName} with generated code.`
     });
     await logOperation('Codebase generation completed successfully');
     console.log(`\n=== WORKFLOW COMPLETED ===`);
-    console.log(`Repository: https://github.com/${process.env.GITHUB_USERNAME || 'username'}/${repoName}`);
+    console.log(`Repository: https://github.com/${process.env.GITHUB_REPO_OWNER || 'username'}/${repoName}`);
     console.log(`========================\n`);
   } catch (error) {
     console.error('Error in codebase generation:', error);
     await logOperation(`Codebase generation failed: ${error.message}`);
-    taskManager.updateTask(taskId, { 
-      step: 'error', 
-      completed: true, 
+    taskManager.updateTask(taskId, {
+      step: 'error',
+      completed: true,
       message: `Error: ${error.message}`,
       summary: `Codebase generation failed: ${error.message}`
     });
@@ -395,7 +397,7 @@ async function copyDirectory(src, dest) {
     if (entry.name === '.git') {
       continue;
     }
-    
+
     const srcPath = path.join(src, entry.name);
     const destPath = path.join(dest, entry.name);
 
@@ -408,20 +410,23 @@ async function copyDirectory(src, dest) {
 }
 
 async function setupGitAndPush(taskId, projectPath, repoName, repoDescription, githubApp) {
-  const username = process.env.GITHUB_USERNAME || 'lee-liao';
-  
+  const username = process.env.GITHUB_REPO_OWNER;
+  if (!username) {
+    throw new Error('GITHUB_REPO_OWNER environment variable is required but not set.');
+  }
+
   taskManager.updateTask(taskId, { step: 'github-create-repo', message: 'Creating GitHub repository...' });
-  
+
   // Create repository on GitHub - this will use PAT since GitHub Apps can't create new repos
   // For a true GitHub App only solution, we would work with existing repos
   // For now, we'll keep the PAT approach but note that this is a limitation of GitHub Apps
   const repo = await githubApp.createRepository(username, repoName, repoDescription, false);
-  
+
   taskManager.updateTask(taskId, { step: 'adding-files', message: 'Adding files via GitHub API...' });
-  
+
   // Read all files from the project directory and add them via GitHub API
   await addFilesToRepoViaAPI(taskId, githubApp, username, repoName, projectPath);
-  
+
   taskManager.updateTask(taskId, { step: 'completed', message: 'Files successfully added to GitHub repository' });
   console.log(`Codebase generation completed successfully! Repository: https://github.com/${username}/${repoName}`);
 }
@@ -430,27 +435,27 @@ async function setupGitAndPush(taskId, projectPath, repoName, repoDescription, g
 async function addFilesToRepoViaAPI(taskId, githubApp, owner, repo, localPath) {
   const fs = require('fs').promises;
   const path = require('path');
-  
+
   // Read all files recursively and add them via GitHub API
   const allFiles = await getAllFiles(localPath);
-  
+
   // Group files by directories to handle them properly
   for (const filePath of allFiles) {
     const relativePath = path.relative(localPath, filePath);
-    
+
     try {
       // Read file content
       const content = await fs.readFile(filePath, 'utf8');
-      
+
       // Add file via GitHub API
       await githubApp.addFile(owner, repo, relativePath, content, 'main', `Add file: ${relativePath}`);
-      
+
       // Update task status periodically
       if (allFiles.indexOf(filePath) % 10 === 0) { // Update every 10 files
         const progress = Math.round((allFiles.indexOf(filePath) / allFiles.length) * 100);
-        taskManager.updateTask(taskId, { 
-          step: 'adding-files', 
-          message: `Adding files via API... (${allFiles.indexOf(filePath) + 1}/${allFiles.length})` 
+        taskManager.updateTask(taskId, {
+          step: 'adding-files',
+          message: `Adding files via API... (${allFiles.indexOf(filePath) + 1}/${allFiles.length})`
         });
       }
     } catch (error) {
@@ -464,19 +469,19 @@ async function addFilesToRepoViaAPI(taskId, githubApp, owner, repo, localPath) {
 async function getAllFiles(dirPath) {
   const fs = require('fs').promises;
   const path = require('path');
-  
+
   const entries = await fs.readdir(dirPath, { withFileTypes: true });
-  
+
   const files = [];
-  
+
   for (const entry of entries) {
     const fullPath = path.join(dirPath, entry.name);
-    
+
     if (entry.name === '.git') {
       // Skip .git directories
       continue;
     }
-    
+
     if (entry.isDirectory()) {
       const nestedFiles = await getAllFiles(fullPath);
       files.push(...nestedFiles);
@@ -484,7 +489,7 @@ async function getAllFiles(dirPath) {
       files.push(fullPath);
     }
   }
-  
+
   return files;
 }
 
@@ -492,25 +497,25 @@ async function getAllFiles(dirPath) {
 router.post('/generate-codebase', async (req, res) => {
   try {
     const { projectFolder, repoName, repoDescription, verboseLogging } = req.body;
-    
+
     // Validate required fields
     if (!projectFolder || !repoName) {
       return res.status(400).send('Project folder and repository name are required');
     }
-    
+
     // Generate a unique task ID
     const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     // Create task and start background processing
     taskManager.createTask(taskId, { step: 'initial', message: 'Starting codebase generation...' });
-    
+
     // Run the codebase generation in the background
     const snippetsPath = process.env.SNIPPETS_PATH || 'D:\\MyCode\\AI\\Victoria\\project2\\snippets';
     // Use setImmediate to ensure the task runs asynchronously without blocking the response
     setImmediate(() => {
       runCodebaseGeneration(taskId, projectFolder, repoName, repoDescription, snippetsPath, verboseLogging);
     });
-    
+
     res.json({ taskId });
   } catch (error) {
     console.error('Error starting codebase generation:', error);
@@ -522,11 +527,11 @@ router.post('/generate-codebase', async (req, res) => {
 router.get('/task-status/:taskId', (req, res) => {
   const { taskId } = req.params;
   const task = taskManager.getTask(taskId);
-  
+
   if (!task) {
     return res.status(404).json({ error: 'Task not found' });
   }
-  
+
   res.json(task.status);
 });
 
@@ -534,28 +539,28 @@ router.get('/task-status/:taskId', (req, res) => {
 router.post('/kill-process/:taskId', (req, res) => {
   const { taskId } = req.params;
   const task = taskManager.getTask(taskId);
-  
+
   if (!task || !task.processInfo || !task.processInfo.pid) {
     return res.status(404).json({ error: 'Task or process not found' });
   }
-  
+
   const { pid } = task.processInfo;
-  
+
   try {
     // Check if process exists and kill it
     process.kill(pid, 'SIGTERM');
-    
+
     // Update task status
     taskManager.updateProcessInfo(taskId, {
       ...task.processInfo,
       status: 'killed-by-user',
       killedAt: new Date()
     });
-    
-    res.json({ 
-      success: true, 
+
+    res.json({
+      success: true,
       message: `Process ${pid} terminated successfully`,
-      pid: pid 
+      pid: pid
     });
   } catch (error) {
     // Process might have already been terminated
@@ -566,15 +571,15 @@ router.post('/kill-process/:taskId', (req, res) => {
         status: 'already-terminated',
         killedAt: new Date()
       });
-      
-      res.json({ 
-        success: true, 
+
+      res.json({
+        success: true,
         message: `Process ${pid} was already terminated`,
-        pid: pid 
+        pid: pid
       });
     } else {
-      res.status(500).json({ 
-        error: `Failed to terminate process ${pid}: ${error.message}` 
+      res.status(500).json({
+        error: `Failed to terminate process ${pid}: ${error.message}`
       });
     }
   }
