@@ -90,6 +90,7 @@ This will delete any repositories with names starting with 'capability-test-', '
 - `GITHUB_APP_ID` - Your GitHub App ID
 - `GITHUB_PRIVATE_KEY_PATH` - Path to your GitHub App private key file
 - `GITHUB_INSTALLATION_ID` - Installation ID of your GitHub App
+- `GITHUB_WEBHOOK_SECRET` - Secret for verifying webhook requests from GitHub
 - `PORT` - Port to run the server on (default: 3000)
 
 ## API Endpoints
@@ -141,6 +142,20 @@ Create a pull request
   "base": "main"
 }
 ```
+
+## Webhook Setup
+
+To receive events from GitHub (such as installation events, push events, pull request events, etc.), you need to configure a webhook in your GitHub App settings:
+
+1. In your GitHub App settings, set the Webhook URL to point to your server's `/webhook` endpoint
+2. Generate a webhook secret and set it as `GITHUB_WEBHOOK_SECRET` in your environment variables
+3. The webhook endpoint handles various GitHub events including:
+   - Installation events (when users install your GitHub App)
+   - Repository events (when repositories are added/removed from installation)
+   - Push events (when code is pushed to repositories)
+   - Pull request events (when pull requests are opened, updated, or closed)
+
+For detailed setup instructions, see [WEBHOOK_SETUP.md](./WEBHOOK_SETUP.md).
 
 ## Running the Server
 

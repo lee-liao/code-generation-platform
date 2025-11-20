@@ -1,27 +1,37 @@
-## GitHub App and Personal Access Token Integration Specification
+## ADDED Requirements
 
 ### Requirement: Hybrid Authentication Architecture
-The system SHALL use GitHub App authentication for all repository operations except repository creation and deletion, which MUST use Personal Access Token authentication.
+The system SHALL implement a hybrid GitHub App and Personal Access Token authentication architecture that combines:
+- GitHub App authentication for standard operations (branches, files, commits, pull requests, pull operations)
+- Personal Access Token authentication for repository creation and deletion
+- Automatic routing based on operation type to appropriate authentication method
 
-#### Scenario: Operation Routing Success
-- **WHEN** the system receives a request for repository creation or deletion
-- **THEN** it routes the request using Personal Access Token authentication
-- **AND** when the system receives other requests (branches, files, commits, PRs), it routes using GitHub App authentication
+#### Scenario: Hybrid Authentication Routing
+- **WHEN** a GitHub operation is requested
+- **THEN** the system automatically routes to appropriate authentication method based on operation type
 
-### Requirement: Authentication Configuration
-The system SHALL properly configure and validate both GitHub App and Personal Access Token credentials from environment variables.
+### Requirement: Personal Access Token Operations
+The system SHALL use Personal Access Token authentication specifically for repository creation and deletion operations.
 
-#### Scenario: Credential Validation Success
-- **WHEN** the system initializes
-- **THEN** it verifies that both GITHUB_APP_ID, GITHUB_PRIVATE_KEY_PATH, GITHUB_INSTALLATION_ID, and GITHUB_PERSONAL_ACCESS_TOKEN are available in environment variables
+#### Scenario: PAT Authentication for Repository Operations
+- **WHEN** repository creation or deletion is requested
+- **THEN** Personal Access Token authentication is used
 
-### Requirement: Fallback Authentication
-The system SHALL handle repository operations gracefully when repositories are empty or when source branches don't exist.
+### Requirement: GitHub App Operations
+The system SHALL use GitHub App authentication for all other supported operations including:
+- Branch creation and management
+- File management (add/update files)
+- Commit operations
+- Pull request creation
+- Repository information retrieval (pull operations)
 
-#### Scenario: Empty Repository Initialization
-- **WHEN** the system attempts to create a branch in an empty repository
-- **THEN** it automatically initializes the repository with a README file before creating the branch
+#### Scenario: GitHub App Authentication for Standard Operations
+- **WHEN** standard operations (branches, files, commits, PRs, pull) are requested
+- **THEN** GitHub App authentication is used with installation tokens
 
-#### Scenario: Missing Source Branch Handling
-- **WHEN** the system attempts to create a branch from a non-existent source branch
-- **THEN** it attempts to use the repository's default branch as the source
+### Requirement: Authentication Fallback Handling
+The system SHALL provide fallback handling for authentication failures and edge cases.
+
+#### Scenario: Authentication Fallback
+- **WHEN** primary authentication method fails
+- **THEN** appropriate fallback or error handling is provided

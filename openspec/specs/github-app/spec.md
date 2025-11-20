@@ -1,81 +1,144 @@
-## GitHub App Capability Specification
+## ADDED Requirements
 
-### Requirement: GitHub App Authentication
-The system SHALL authenticate with GitHub API using JWT tokens and GitHub App credentials for most operations, with Personal Access Token used for repository creation and deletion.
+### Requirement: Repository Creation
+The system SHALL provide functionality to create new GitHub repositories using Personal Access Token (PAT) authentication.
 
-#### Scenario: App Authentication Success
-- **WHEN** the GitHub App needs to authenticate with GitHub API for standard operations
-- **THEN** it generates a JWT token using the private key and app ID, and exchanges it for an installation access token
+#### Scenario: Successful Repository Creation
+- **WHEN** a POST request is made to /create-repo endpoint with valid owner, name, description and isPrivate parameters
+- **THEN** a new GitHub repository is created and the repository information is returned
 
-#### Scenario: Repository Operations Authentication
-- **WHEN** the GitHub App needs to create or delete repositories
-- **THEN** it uses the Personal Access Token from environment variables instead of the GitHub App authentication
+### Requirement: Repository Deletion
+The system SHALL provide functionality to delete GitHub repositories using Personal Access Token (PAT) authentication.
 
-### Requirement: Repository Creation and Deletion
-The system SHALL create and delete GitHub repositories via the GitHub API using Personal Access Token authentication.
-
-#### Scenario: Repository Creation Success
-- **WHEN** the app receives a request to create a new repository
-- **THEN** it creates a new public repository with the specified name and description using Personal Access Token
-
-#### Scenario: Repository Deletion Success
-- **WHEN** the app receives a request to delete a repository
-- **THEN** it deletes the repository using Personal Access Token
+#### Scenario: Successful Repository Deletion
+- **WHEN** a DELETE request is made with valid repository parameters
+- **THEN** the specified GitHub repository is deleted
 
 ### Requirement: Branch Creation
-The system SHALL create new branches in GitHub repositories via the GitHub API, with automatic handling for empty repositories.
+The system SHALL provide functionality to create new branches in repositories with automatic handling for empty repositories.
 
-#### Scenario: Branch Creation Success
-- **WHEN** the app receives a request to create a new branch from an existing branch
-- **THEN** it creates a new branch with the same SHA as the source branch
+#### Scenario: Successful Branch Creation
+- **WHEN** a POST request is made to /create-branch endpoint with valid owner, repo, branchName and sourceBranch parameters
+- **THEN** a new branch is created from the source branch in the specified repository
 
 #### Scenario: Empty Repository Branch Creation
-- **WHEN** the app receives a request to create a new branch in an empty repository
-- **THEN** it first initializes the repository with a README file, then creates the new branch
+- **WHEN** branch creation is attempted on an empty repository
+- **THEN** automatic initialization handling occurs and the branch is created successfully
 
 ### Requirement: File Management
-The system SHALL add, update, and manage files in GitHub repositories via the GitHub API.
+The system SHALL provide functionality to add and update files in repositories.
 
-#### Scenario: File Addition Success
-- **WHEN** the app receives a request to add a file to a repository
-- **THEN** it adds the file to the specified branch with the provided content
-
-#### Scenario: File Update Success
-- **WHEN** the app receives a request to update an existing file
-- **THEN** it updates the file content while maintaining the SHA reference
+#### Scenario: Successful File Addition
+- **WHEN** a POST request is made to /add-file endpoint with valid owner, repo, filePath, content, branch and commitMessage parameters
+- **THEN** the file is added or updated in the repository and the file information is returned
 
 ### Requirement: Commit Operations
-The system SHALL create commits in GitHub repositories via the GitHub API.
+The system SHALL provide functionality to commit multiple file changes to repositories.
 
-#### Scenario: Commit Creation Success
-- **WHEN** the app receives a request to commit changes
-- **THEN** it creates a commit with the specified message and file changes
-
-### Requirement: Push Operations
-The system SHALL push changes to GitHub repositories via the GitHub API.
-
-#### Scenario: Push Success
-- **WHEN** the app commits changes to a branch
-- **THEN** the changes are automatically pushed to the remote repository branch
+#### Scenario: Successful Multi-File Commit
+- **WHEN** a POST request is made to /commit endpoint with valid owner, repo, commitMessage, and files parameters
+- **THEN** all specified files are committed to the repository and commit information is returned
 
 ### Requirement: Pull Request Creation
-The system SHALL create pull requests between branches via the GitHub API.
+The system SHALL provide functionality to create pull requests between branches.
 
-#### Scenario: Pull Request Creation Success
-- **WHEN** the app receives a request to create a pull request
-- **THEN** it creates a new pull request from source branch to target branch with the specified title and description
+#### Scenario: Successful Pull Request Creation
+- **WHEN** a POST request is made to /create-pull-request endpoint with valid owner, repo, title, body, head and base parameters
+- **THEN** a new pull request is created and pull request information is returned
 
 ### Requirement: Pull Operations
-The system SHALL retrieve information from GitHub repositories via the GitHub API.
+The system SHALL provide functionality to retrieve repository information including branches, repository details, and branch information.
 
-#### Scenario: Get Branches Success
-- **WHEN** the app receives a request to retrieve all branches from a repository
-- **THEN** it returns a list of all available branches in the repository
+#### Scenario: Successful Branch Retrieval
+- **WHEN** a GET request is made to /branches endpoint with valid owner and repo parameters
+- **THEN** all branches in the specified repository are returned
 
-#### Scenario: Get Repository Information Success
-- **WHEN** the app receives a request to retrieve repository information
-- **THEN** it returns details about the repository including name, description, and default branch
+#### Scenario: Successful Repository Information Retrieval
+- **WHEN** a GET request is made to /repository endpoint with valid owner and repo parameters
+- **THEN** the repository information is returned
 
-#### Scenario: Get Branch Information Success
-- **WHEN** the app receives a request to retrieve specific branch information
-- **THEN** it returns details about the specific branch including commit SHA and protection status
+#### Scenario: Successful Branch Information Retrieval
+- **WHEN** a GET request is made to /branch endpoint with valid owner, repo and branchName parameters
+- **THEN** the specified branch information is returned
+
+### Requirement: GitHub App Authentication
+The system SHALL use GitHub App authentication for standard operations including branches, files, commits, pull requests, and pull operations.
+
+#### Scenario: GitHub App Authenticated Operation
+- **WHEN** an operation that supports GitHub App authentication is requested
+- **THEN** the operation is performed using GitHub App installation tokens
+
+### Requirement: Hybrid Authentication Routing
+The system SHALL route operations to appropriate authentication method based on operation type:
+- GitHub App authentication for: branches, files, commits, pull requests, pull operations
+- Personal Access Token authentication for: repository creation/deletion
+
+#### Scenario: Operation Routing
+- **WHEN** a specific GitHub operation is requested
+- **THEN** the appropriate authentication method is used based on the operation type
+
+### Requirement: Push Operations
+The system SHALL automatically handle push operations as part of commit operations.
+
+#### Scenario: Automatic Push After Commit
+- **WHEN** a commit operation is completed
+- **THEN** changes are automatically pushed to the remote repository
+
+### Requirement: API Documentation
+The system SHALL provide complete REST API with OpenAPI/Swagger documentation available at /api-docs endpoint.
+
+#### Scenario: API Documentation Access
+- **WHEN** user accesses /api-docs endpoint
+- **THEN** interactive API documentation is displayed
+
+## MODIFIED Requirements
+
+### Requirement: Codebase Generation Endpoints
+The system SHALL provide codebase generation functionality through the following endpoints:
+- GET / - Web interface for codebase generation
+- POST /generate-codebase - Initiates codebase generation from template with optional Claude AI processing
+- GET /task-status/:taskId - Checks status of background tasks with real-time updates
+- POST /kill-process/:taskId - Terminates a running task process for user control
+
+#### Scenario: Codebase Generation Initiation
+- **WHEN** a POST request is made to /generate-codebase with valid parameters
+- **THEN** a background task is created and task ID is returned
+
+#### Scenario: Task Status Check
+- **WHEN** a GET request is made to /task-status/:taskId
+- **THEN** the current status of the specified task is returned
+
+#### Scenario: Process Termination
+- **WHEN** a POST request is made to /kill-process/:taskId
+- **THEN** the process associated with the task is terminated
+
+## ADDED Requirements
+
+### Requirement: Git Operations Endpoints
+The system SHALL provide Git operations endpoints for repository management:
+- POST /git-init - Initialize Git repository
+- POST /git-config - Configure Git user information
+- POST /git-add - Add files to Git staging
+- POST /git-commit - Commit staged changes
+- POST /git-remote - Add Git remote
+- POST /git-push - Push changes to remote repository
+- GET /git-status - Get Git status
+
+#### Scenario: Git Operations Access
+- **WHEN** Git operation endpoints are accessed under /git prefix
+- **THEN** the corresponding Git command is executed with appropriate parameters
+
+### Requirement: Validation Features
+The system SHALL provide validation functionality including:
+- Checks if project folder exists
+- Validates that no sibling directory with same name exists
+- Verifies that no GitHub repository with same name already exists
+- Provides appropriate error feedback to user interface
+
+#### Scenario: Validation Success
+- **WHEN** all validation checks pass
+- **THEN** the codebase generation process proceeds
+
+#### Scenario: Validation Failure
+- **WHEN** any validation check fails
+- **THEN** appropriate error message is returned to user interface

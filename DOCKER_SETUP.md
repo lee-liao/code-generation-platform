@@ -18,6 +18,7 @@ To run this application using Docker, follow these steps:
    You'll need to fill in the following values in your `.env` file:
    - `GITHUB_APP_ID`: Your GitHub App ID
    - `GITHUB_INSTALLATION_ID`: Your GitHub App installation ID
+   - `GITHUB_WEBHOOK_SECRET`: Your GitHub App webhook secret
    - `GITHUB_PERSONAL_ACCESS_TOKEN`: Your GitHub Personal Access Token
    - `GITHUB_USERNAME`: Your GitHub username
 
