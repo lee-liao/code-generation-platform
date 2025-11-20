@@ -1,5 +1,7 @@
 require('dotenv').config();
 const express = require('express');
+const crypto = require('crypto');
+const fileUpload = require('express-fileupload');
 const path = require('path');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
@@ -7,12 +9,27 @@ const { GitHubApp } = require('./github-app');
 const codebaseGenerationRouter = require('./routes/codebase-generation');
 const gitOperationsRouter = require('./routes/git-operations');
 const claudeTestRouter = require('./routes/claude-test');
+const openspecImplementationAgentRouter = require('./routes/openspec-implementation-agent');
 
 const app = express();
 const port = process.env.PORT || 3000;
 
-// Parse JSON bodies
+// Middleware to parse raw body for webhook verification
+app.use('/webhook', express.raw({type: 'application/json'}));
+
+// Parse JSON bodies for other routes
 app.use(express.json());
+
+// Add file upload middleware
+app.use(fileUpload({
+  useTempFiles: true,
+  tempFileDir: './temp/',
+  createParentPath: true,
+  limits: {
+    fileSize: 50 * 1024 * 1024 // 50MB max file size
+  },
+  abortOnLimit: true
+}));
 
 // Initialize GitHub App
 const githubApp = new GitHubApp();
@@ -56,6 +73,76 @@ app.use(express.static('public'));
 // Fallback health check endpoint at a different path
 app.get('/health', (req, res) => {
   res.json({ message: 'GitHub App for CGP is running!' });
+});
+
+// Webhook endpoint for GitHub App
+app.post('/webhook', (req, res) => {
+  const signature = req.get('X-Hub-Signature-256');
+  const event = req.get('X-GitHub-Event');
+  const id = req.get('X-GitHub-Delivery');
+  const body = req.body;
+
+  // Verify webhook signature
+  if (process.env.GITHUB_WEBHOOK_SECRET) {
+    const expectedSignature = 'sha256=' + crypto
+      .createHmac('sha256', process.env.GITHUB_WEBHOOK_SECRET)
+      .update(body)
+      .digest('hex');
+    
+    if (signature !== expectedSignature) {
+      console.error('Webhook signature verification failed');
+      return res.status(400).send('Invalid signature');
+    }
+  } else {
+    console.warn('GITHUB_WEBHOOK_SECRET not set, skipping webhook verification');
+  }
+
+  console.log(`Received webhook event: ${event}, ID: ${id}`);
+
+  // Handle different GitHub events
+  switch (event) {
+    case 'installation':
+      // Handle GitHub App installation events
+      const installationAction = req.body.action;
+      const installationId = req.body.installation?.id;
+      const accountLogin = req.body.installation?.account?.login;
+      
+      console.log(`Installation ${installationAction} event for account: ${accountLogin}, ID: ${installationId}`);
+      
+      // Store installation ID in environment for testing, in production use a database
+      if (installationAction === 'created') {
+        process.env.GITHUB_INSTALLATION_ID = installationId;
+        console.log(`Stored installation ID: ${installationId}`);
+      }
+      break;
+      
+    case 'installation_repositories':
+      // Handle repository addition/removal from installation
+      const repositoriesAction = req.body.action;
+      console.log(`Repository ${repositoriesAction} event for installation: ${req.body.installation?.id}`);
+      break;
+      
+    case 'push':
+      // Handle push events
+      const repoName = req.body.repository?.name;
+      const ref = req.body.ref;
+      console.log(`Push event for repository: ${repoName}, ref: ${ref}`);
+      break;
+      
+    case 'pull_request':
+      // Handle pull request events
+      const prAction = req.body.action;
+      const prNumber = req.body.number;
+      const prRepo = req.body.repository?.name;
+      console.log(`Pull request ${prAction} event for PR #${prNumber} in ${prRepo}`);
+      break;
+      
+    default:
+      console.log(`Unhandled webhook event: ${event}`);
+      break;
+  }
+
+  res.status(200).json({ message: 'Webhook received', event: event, id: id });
 });
 
 // Endpoint to create a repository
@@ -918,6 +1005,9 @@ app.use('/', codebaseGenerationRouter);
 
 // Git operations routes  
 app.use('/git', gitOperationsRouter); // Put git operations under /git prefix to avoid conflicts
+
+// OpenSpec implementation agent routes
+app.use('/openspec', openspecImplementationAgentRouter); // Put OpenSpec implementation routes under /openspec prefix
 
 // Serve static files at root (this will serve index.html)
 app.use(express.static('public'));
