@@ -4,6 +4,9 @@ FROM node:18-alpine
 # Set the working directory inside the container
 WORKDIR /app
 
+# Install git and other required tools
+RUN apk add --no-cache git
+
 # Copy package.json and package-lock.json (if available)
 COPY package*.json ./
 
