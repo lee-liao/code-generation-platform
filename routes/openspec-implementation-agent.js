@@ -510,8 +510,12 @@ async function runOpenSpecImplementation(taskId, repoName, zipPath) {
     taskManager.updateTask(taskId, { step: 'claude-implementation', message: 'Running Claude AI implementation...' });
     await logOperation('Running Claude AI implementation...');
 
-    await runClaudeImplementation(taskId, tempDir, changeId, logFilePath);
-    await logOperation('Claude AI implementation completed');
+    // await runClaudeImplementation(taskId, tempDir, changeId, logFilePath);
+    // await logOperation('Claude AI implementation completed');
+
+    // SIMULATE CHANGE FOR TESTING (Docker environment without Claude CLI)
+    await fsPromises.writeFile(path.join(tempDir, 'test_verification_docker.txt'), 'This is a test file to verify GitHub workflow in Docker.');
+    await logOperation('Created test_verification_docker.txt to simulate changes.');
 
     // Commit changes via API
     taskManager.updateTask(taskId, { step: 'git-commit', message: 'Committing changes...' });

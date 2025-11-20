@@ -43,7 +43,7 @@ class InstallationStorage {
     try {
       // Ensure keystore directory exists
       this.ensureKeystoreDirectory();
-      
+
       // Write the current installation map to file
       fs.writeFileSync(this.storagePath, JSON.stringify(global.installationMap || {}, null, 2));
     } catch (error) {
@@ -56,7 +56,7 @@ class InstallationStorage {
     if (!global.installationMap) {
       global.installationMap = {};
     }
-    
+
     global.installationMap[owner] = installationId;
     this.saveToDisk();
   }
@@ -74,7 +74,11 @@ class InstallationStorage {
     if (!global.installationMap) {
       return null;
     }
-    return global.installationMap[owner] || null;
+    const id = global.installationMap[owner] || null;
+    if (!id && process.env.GITHUB_INSTALLATION_ID) {
+      return process.env.GITHUB_INSTALLATION_ID;
+    }
+    return id;
   }
 
   // Get all installations

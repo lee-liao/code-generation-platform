@@ -41,7 +41,7 @@ class GitHubApp {
   async getGitHubClient(installationId) {
     const auth = await this.appAuth({
       type: "installation",
-      installationId: installationId,
+      installationId: String(installationId),
     });
 
     return new Octokit({
