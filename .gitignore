@@ -231,3 +231,6 @@ CLAUDE.md
 
 # Generated files and logs
 *.log
+
+# Runtime temporary directory
+temp/
