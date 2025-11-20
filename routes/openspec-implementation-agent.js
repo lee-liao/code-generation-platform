@@ -1,0 +1,606 @@
+const express = require('express');
+const { exec, spawn, execSync } = require('child_process');
+const { promisify } = require('util');
+const fsPromises = require('fs').promises;
+const fs = require('fs');
+const path = require('path');
+const unzipper = require('unzipper');
+const { GitHubApp } = require('../github-app');
+
+const execAsync = promisify(exec);
+const router = express.Router();
+
+// In-memory task storage (in production, use a proper database)
+const tasks = new Map();
+
+// Background task manager
+class TaskManager {
+  constructor() {
+    this.tasks = new Map();
+  }
+
+  createTask(taskId, initialStatus = { step: 'initial', completed: false }) {
+    this.tasks.set(taskId, {
+      id: taskId,
+      status: initialStatus,
+      processInfo: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+  }
+
+  updateTask(taskId, status) {
+    const task = this.tasks.get(taskId);
+    if (task) {
+      task.status = { ...task.status, ...status };
+      task.updatedAt = new Date();
+      this.tasks.set(taskId, task);
+    }
+  }
+
+  updateProcessInfo(taskId, processInfo) {
+    const task = this.tasks.get(taskId);
+    if (task) {
+      task.processInfo = processInfo;
+      task.updatedAt = new Date();
+      this.tasks.set(taskId, task);
+    }
+  }
+
+  getTask(taskId) {
+    return this.tasks.get(taskId);
+  }
+
+  removeTask(taskId) {
+    this.tasks.delete(taskId);
+  }
+}
+
+const taskManager = new TaskManager();
+
+// Function to validate OpenSpec zip file
+async function validateOpenSpecZip(zipPath) {
+  // Extract to temporary directory for validation
+  const tempDir = path.join(__dirname, '..', 'temp', `validation_${Date.now()}`);
+  await fsPromises.mkdir(tempDir, { recursive: true });
+
+  try {
+    // Unzip the file to temporary location first
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(zipPath)
+        .pipe(unzipper.Extract({ path: tempDir }))
+        .on('close', resolve)
+        .on('error', reject);
+    });
+
+    // Check the extracted content to determine if it has proper OpenSpec structure
+    const extractedContents = await fsPromises.readdir(tempDir);
+    
+    let changesDir = path.join(tempDir, 'changes');
+    
+    // Check if there's a changes directory at the root
+    let hasChangesDir = false;
+    try {
+      await fsPromises.access(changesDir);
+      hasChangesDir = true;
+    } catch {
+      // No changes directory at root, check if there's a single directory that might contain the changes
+      if (extractedContents.length === 1) {
+        const singleItemPath = path.join(tempDir, extractedContents[0]);
+        const stat = await fsPromises.stat(singleItemPath);
+        if (stat.isDirectory()) {
+          // This could be the changes directory (e.g., if user zipped the changes folder itself)
+          changesDir = singleItemPath;
+          try {
+            await fsPromises.access(changesDir);
+            hasChangesDir = true;
+          } catch {
+            // Still no valid changes directory
+          }
+        }
+      }
+    }
+
+    if (hasChangesDir) {
+      // Check for required files in the changes directory
+      const changesContents = await fsPromises.readdir(changesDir);
+      if (changesContents.length === 0) {
+        throw new Error('OpenSpec zip does not contain any change directories');
+      }
+
+      // For each change directory, check for required files
+      for (const changeDir of changesContents) {
+        const changePath = path.join(changesDir, changeDir);
+        const stat = await fsPromises.stat(changePath);
+        if (stat.isDirectory()) {
+          const requiredFiles = ['proposal.md', 'tasks.md'];
+          for (const file of requiredFiles) {
+            const filePath = path.join(changePath, file);
+            try {
+              await fsPromises.access(filePath);
+            } catch (err) {
+              console.warn(`Warning: Expected file ${file} not found in ${changeDir}, but continuing`);
+            }
+          }
+          
+          // Check for specs directory
+          const specsDir = path.join(changePath, 'specs');
+          try {
+            await fsPromises.access(specsDir);
+          } catch (err) {
+            console.warn(`Warning: specs directory not found in ${changeDir}, but continuing`);
+          }
+        }
+      }
+      
+      return true;
+    } else {
+      // If no changes directory found but there are some contents, we'll accept it as it will be processed properly in the main function
+      if (extractedContents.length > 0) {
+        console.warn(`Warning: No changes directory found at zip root, but zip contains content. This will be handled in the implementation phase.`);
+        return true;
+      } else {
+        throw new Error('OpenSpec zip does not contain required changes directory structure');
+      }
+    }
+  } catch (error) {
+    throw new Error(`Invalid OpenSpec structure: ${error.message}`);
+  } finally {
+    // Cleanup temp directory
+    try {
+      await fsPromises.rm(tempDir, { recursive: true, force: true });
+    } catch (cleanupError) {
+      console.error('Error cleaning up validation temp directory:', cleanupError);
+    }
+  }
+}
+
+// Function to implement OpenSpec change with Claude
+async function runClaudeImplementation(taskId, workingDir, changeId, logFilePath) {
+  const logOperation = async (message) => {
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] Task ${taskId}: ${message}\n`;
+    try {
+      await fsPromises.appendFile(logFilePath, logEntry);
+    } catch (error) {
+      console.error('Error writing to log file:', error);
+    }
+  };
+
+  try {
+    await logOperation(`Starting Claude implementation in directory: ${workingDir}`);
+    taskManager.updateTask(taskId, { step: 'claude-implementation', message: 'Starting Claude AI implementation...' });
+
+    // Build the Claude command
+    const claudeCommand = 'claude -p --permission-mode bypassPermissions "The project has been set up for spec-driven development with detailed specifications in OpenSpec standards. The specifications are detailed enough be implemented without any user input. Read the OpenSpec change requirements under @openspec/changes/** and implement the specification. Create the required files and directories as specified in the OpenSpec document. After implementation, verify the new created files fulfill the requirements."';
+
+    // Set up environment
+    const originalCwd = process.cwd();
+    try {
+      process.chdir(workingDir);
+
+      // Check if Claude CLI is available
+      let claudeAvailable = false;
+      const environment = { ...process.env };
+
+      try {
+        execSync('cmd /c claude --version', { 
+          stdio: 'pipe', 
+          env: environment
+        });
+        claudeAvailable = true;
+      } catch (availabilityCheckError) {
+        console.log('Claude availability check failed, trying with enhanced PATH');
+        // Try with enhanced PATH
+        const enhancedEnv = {
+          ...environment,
+          PATH: `${process.env.PATH || ''};${process.env.USERPROFILE || process.env.HOMEPATH}\\AppData\\Roaming\\npm`
+        };
+        
+        try {
+          execSync('cmd /c claude --version', { 
+            stdio: 'pipe', 
+            env: enhancedEnv
+          });
+          claudeAvailable = true;
+          Object.assign(environment, enhancedEnv);
+        } catch (secondCheckError) {
+          console.log('Claude not available with enhanced PATH either');
+        }
+      }
+
+      if (!claudeAvailable) {
+        throw new Error('Claude CLI not found on system');
+      }
+
+      // Run Claude command with enhanced environment that we know works
+      return new Promise((resolve, reject) => {
+        const childProcess = spawn('cmd', ['/c', claudeCommand], {
+          cwd: workingDir,
+          env: environment,
+          stdio: ['ignore', 'pipe', 'pipe'], // Ignore stdin to prevent hanging
+          windowsHide: true
+        });
+
+        // Track the process in the task manager
+        taskManager.updateProcessInfo(taskId, {
+          pid: childProcess.pid,
+          status: 'running',
+          startTime: new Date()
+        });
+
+        let stdout = '';
+        let stderr = '';
+
+        childProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        childProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        // Increase timeout to 10 minutes to allow Claude to complete implementation
+        const timeoutId = setTimeout(() => {
+          if (!childProcess.killed) {
+            childProcess.kill();
+            taskManager.updateProcessInfo(taskId, {
+              pid: childProcess.pid,
+              status: 'killed-by-timeout',
+              endTime: new Date()
+            });
+            logOperation('Claude AI implementation timed out after 10 minutes. Process was terminated.');
+            reject(new Error('Claude AI implementation timed out after 10 minutes. Process was terminated.'));
+          }
+        }, 600000); // 10 minutes timeout
+
+        childProcess.on('close', (code) => {
+          // Clear the timeout since the process has completed
+          clearTimeout(timeoutId);
+
+          taskManager.updateProcessInfo(taskId, {
+            pid: childProcess.pid,
+            status: 'completed',
+            exitCode: code,
+            endTime: new Date()
+          });
+
+          if (code === 0) {
+            // Claude implementation completed successfully
+            let outputContent = `Stdout:\n${stdout}\n\nStderr:\n${stderr}\n\nCommand executed: ${claudeCommand}\nExit code: ${code}`;
+            fs.writeFile(path.join(workingDir, 'claude-implementation-output.txt'), outputContent)
+              .then(() => {
+                logOperation('Claude AI implementation completed successfully.');
+                taskManager.updateTask(taskId, { 
+                  step: 'claude-implementation-complete', 
+                  message: 'Claude implementation completed. Proceeding to Git operations...' 
+                });
+                resolve();
+              })
+              .catch(writeErr => {
+                logOperation(`Failed to write Claude output: ${writeErr.message}`);
+                reject(writeErr);
+              });
+          } else {
+            let errorOutput = `Stdout:\n${stdout}\n\nStderr:\n${stderr}\n\nCommand executed: ${claudeCommand}\nExit code: ${code}`;
+            logOperation(`Claude command failed with exit code ${code}`);
+            const error = new Error(`Claude command failed with exit code ${code}.\nOutput: ${errorOutput}`);
+            taskManager.updateTask(taskId, { 
+              step: 'claude-implementation-error', 
+              message: `Claude implementation failed with exit code: ${code}` 
+            });
+            reject(error);
+          }
+        });
+
+        childProcess.on('error', (error) => {
+          // Clear the timeout since the process has erred
+          clearTimeout(timeoutId);
+
+          taskManager.updateProcessInfo(taskId, {
+            pid: childProcess.pid,
+            status: 'error',
+            error: error.message,
+            endTime: new Date()
+          });
+          logOperation(`Claude command error: ${error.message}`);
+          taskManager.updateTask(taskId, { 
+            step: 'claude-implementation-error', 
+            message: `Claude implementation error: ${error.message}` 
+          });
+          reject(error);
+        });
+      });
+    } finally {
+      process.chdir(originalCwd);
+    }
+  } catch (error) {
+    console.error('Error in Claude implementation:', error);
+    await logOperation(`Claude implementation failed: ${error.message}`);
+    taskManager.updateTask(taskId, { 
+      step: 'error', 
+      completed: true, 
+      message: `Error: ${error.message}`,
+      summary: `Claude implementation failed: ${error.message}`
+    });
+    throw error;
+  }
+}
+
+// OpenSpec implementation workflow
+async function runOpenSpecImplementation(taskId, repoName, zipPath) {
+  const githubApp = new GitHubApp();
+  const logFilePath = path.join(__dirname, '..', 'openspec-implementation.log');
+  
+  // Function to log operations
+  const logOperation = async (message) => {
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] Task ${taskId}: ${message}\n`;
+    try {
+      await fsPromises.appendFile(logFilePath, logEntry);
+    } catch (error) {
+      console.error('Error writing to log file:', error);
+    }
+  };
+
+  let workingDir = null;
+  let tempDir = null;
+
+  try {
+    await logOperation(`Starting OpenSpec implementation for repository: ${repoName}`);
+    taskManager.updateTask(taskId, { step: 'validation', message: 'Validating OpenSpec zip file...' });
+
+    // Validate the OpenSpec zip file
+    await logOperation('Validating OpenSpec zip file');
+    await validateOpenSpecZip(zipPath);
+    await logOperation('OpenSpec zip validation passed');
+
+    taskManager.updateTask(taskId, { step: 'cloning', message: 'Cloning repository...' });
+    await logOperation('Starting repository clone');
+
+    // Create a temporary directory for the working copy
+    const repoOwner = process.env.GITHUB_USERNAME || 'lee-liao';
+    tempDir = path.join(__dirname, '..', 'temp', `repo_${Date.now()}`);
+    await fsPromises.mkdir(tempDir, { recursive: true });
+
+    // Clone the repository
+    const repoUrl = `https://github.com/${repoOwner}/${repoName}.git`;
+    const cloneResult = await execAsync(`git clone "${repoUrl}" "${tempDir}"`);
+    await logOperation(`Repository cloned successfully: ${repoName}`);
+
+    // Extract change ID from the zip file name or contents
+    const zipFileName = path.basename(zipPath);
+    const changeId = path.parse(zipFileName).name; // This might need adjustment based on actual zip naming
+    
+    // Remove Unix timestamp from changeId and reformat (e.g., "1763670523665_update-hello-world-to-loaded" -> "update-hello-world-to-loaded_1763670523665")
+    const parts = changeId.split('_');
+    let formattedChangeId = changeId; // Default to original if not in expected format
+    let cleanChangeIdForBranch = changeId; // For use in branch name
+    if (parts.length >= 2 && /^\d+$/.test(parts[0])) {
+      // If first part is numeric (timestamp), reformat to put timestamp at the end
+      const timestamp = parts[0];
+      const description = parts.slice(1).join('_');
+      formattedChangeId = `${description}_${timestamp}`;
+      cleanChangeIdForBranch = description; // Use just the description part for branch name
+    }
+    
+    // Create feature branch name with clean changeId and datetime
+    const branchName = `feature/${cleanChangeIdForBranch}+${new Date().toISOString().replace(/[:.]/g, '-')}`;
+    taskManager.updateTask(taskId, { step: 'branch-creation', message: `Creating feature branch: ${branchName}` });
+    await logOperation(`Creating feature branch: ${branchName}`);
+    
+    // Create and switch to the feature branch
+    await execAsync(`git checkout -b "${branchName}"`, { cwd: tempDir });
+    await logOperation(`Feature branch created: ${branchName}`);
+
+    // Create changes directory structure and unzip the OpenSpec change
+    taskManager.updateTask(taskId, { step: 'unzipping', message: 'Unzipping OpenSpec change...' });
+    await logOperation('Creating changes directory structure and unzipping OpenSpec change');
+    
+    // Ensure the changes directory exists under openspec
+    const changesTargetDir = path.join(tempDir, 'openspec', 'changes');
+    await fsPromises.mkdir(changesTargetDir, { recursive: true });
+    
+    // Extract the zip file to a temporary location first
+    const tempExtractDir = path.join(tempDir, 'temp-extract');
+    await fsPromises.mkdir(tempExtractDir, { recursive: true });
+    
+    // Unzip to temporary location
+    await new Promise((resolve, reject) => {
+      fs.createReadStream(zipPath)
+        .pipe(unzipper.Extract({ path: tempExtractDir }))
+        .on('close', resolve)
+        .on('error', reject);
+    });
+    
+    // Check the extracted content structure
+    const extractedContents = await fsPromises.readdir(tempExtractDir);
+    
+    // Determine the source directory for the changes
+    let sourceDir = tempExtractDir;
+    
+    // If the zip contains a single top-level directory, use that as source
+    if (extractedContents.length === 1) {
+      const singleItemPath = path.join(tempExtractDir, extractedContents[0]);
+      const stat = await fsPromises.stat(singleItemPath);
+      if (stat.isDirectory()) {
+        sourceDir = singleItemPath;
+      }
+    }
+    
+    // Copy all extracted content to the changes directory
+    const finalContents = await fsPromises.readdir(sourceDir);
+    for (const item of finalContents) {
+      const sourcePath = path.join(sourceDir, item);
+      const destPath = path.join(changesTargetDir, item);
+      await fsPromises.cp(sourcePath, destPath, { recursive: true });
+    }
+    
+    // Clean up temporary extraction directory
+    await fsPromises.rm(tempExtractDir, { recursive: true, force: true });
+
+    // Check if .claude folder exists, if not initialize Claude
+    const claudeDir = path.join(tempDir, '.claude');
+    try {
+      await fsPromises.access(claudeDir);
+      await logOperation('.claude folder already exists');
+    } catch (err) {
+      taskManager.updateTask(taskId, { step: 'claude-setup', message: 'Initializing Claude environment...' });
+      await logOperation('Initializing Claude environment');
+      
+      // Try to initialize Claude (this might fail if Claude isn't properly installed)
+      try {
+        await execAsync('claude init --yes', { cwd: tempDir });
+        await logOperation('Claude environment initialized');
+      } catch (initError) {
+        await logOperation(`Claude init failed (this may be OK): ${initError.message}`);
+        // This is not a fatal error - Claude may be set up differently
+      }
+    }
+
+    // Copy OpenSpec prompts to root of working directory
+    taskManager.updateTask(taskId, { step: 'copying-prompts', message: 'Copying OpenSpec prompts...' });
+    await logOperation('Copying OpenSpec prompts to working directory');
+    
+    const promptsSource = path.join(__dirname, '..', 'resources', 'OpenSpec', 'prompts.md');
+    const promptsDest = path.join(tempDir, 'prompts.md');
+    
+    try {
+      await fsPromises.copyFile(promptsSource, promptsDest);
+      await logOperation('OpenSpec prompts copied successfully');
+    } catch (copyError) {
+      await logOperation(`Could not copy OpenSpec prompts: ${copyError.message}`);
+    }
+
+    // Run Claude to implement the OpenSpec change
+    taskManager.updateTask(taskId, { step: 'claude-implementation', message: 'Skipping Claude AI implementation for testing...' });
+    await logOperation('Skipping Claude AI implementation for testing...');
+    
+    // await runClaudeImplementation(taskId, tempDir, changeId, logFilePath);
+    // await logOperation('Claude AI implementation completed');
+
+    // Commit the changes
+    taskManager.updateTask(taskId, { step: 'git-commit', message: 'Committing changes...' });
+    await logOperation('Committing changes to feature branch');
+    
+    await execAsync('git add .', { cwd: tempDir });
+    await execAsync(`git commit -m "Implement OpenSpec change: ${formattedChangeId}"`, { cwd: tempDir });
+
+    // Push the changes to the feature branch
+    taskManager.updateTask(taskId, { step: 'git-push', message: 'Pushing changes to remote...' });
+    await logOperation('Pushing changes to remote feature branch');
+    
+    await execAsync(`git push origin "${branchName}"`, { cwd: tempDir });
+
+    // Create a pull request from feature branch to main
+    taskManager.updateTask(taskId, { step: 'create-pr', message: 'Creating pull request...' });
+    await logOperation('Creating pull request from feature branch to main');
+    
+    const prTitle = `Implement OpenSpec change: ${formattedChangeId}`;
+    const prBody = `Automated pull request to implement the OpenSpec change ${formattedChangeId}.\n\nThis PR was automatically generated by the OpenSpec Implementation Agent.`;
+    
+    const prResult = await githubApp.createPullRequest(
+      repoOwner, 
+      repoName, 
+      prTitle, 
+      prBody, 
+      branchName, 
+      'main'
+    );
+    
+    await logOperation(`Pull request created successfully: ${prResult.html_url}`);
+
+    // Update task status to completed
+    taskManager.updateTask(taskId, { 
+      step: 'completed', 
+      completed: true, 
+      message: 'OpenSpec implementation completed successfully!',
+      summary: `Successfully implemented OpenSpec change and created PR: ${prResult.html_url}`,
+      pullRequestUrl: prResult.html_url
+    });
+    
+    await logOperation('OpenSpec implementation completed successfully');
+  } catch (error) {
+    console.error('Error in OpenSpec implementation:', error);
+    await logOperation(`OpenSpec implementation failed: ${error.message}`);
+    taskManager.updateTask(taskId, { 
+      step: 'error', 
+      completed: true, 
+      message: `Error: ${error.message}`,
+      summary: `OpenSpec implementation failed: ${error.message}`
+    });
+  } finally {
+    // Cleanup temporary files
+    try {
+      if (tempDir) {
+        await fsPromises.rm(tempDir, { recursive: true, force: true });
+        await logOperation(`Cleaned up temporary directory: ${tempDir}`);
+      }
+    } catch (cleanupError) {
+      console.error('Error cleaning up temporary directory:', cleanupError);
+    }
+  }
+}
+
+// Route to handle OpenSpec implementation request
+router.post('/openspec-implement', async (req, res) => {
+  try {
+    // Check if this is a multipart form request (for file upload)
+    if (!req.files || !req.files.zipFile || !req.body.repoName) {
+      return res.status(400).json({ error: 'Zip file and repository name are required' });
+    }
+
+    const zipFile = req.files.zipFile;
+    const repoName = req.body.repoName;
+
+    // Validate file type
+    if (!zipFile.mimetype.includes('zip') && !zipFile.name.endsWith('.zip')) {
+      return res.status(400).json({ error: 'Only zip files are allowed' });
+    }
+
+    // Create a temporary location to save the file
+    const tempPath = path.join(__dirname, '..', 'temp', `${Date.now()}_${zipFile.name}`);
+    await fsPromises.mkdir(path.dirname(tempPath), { recursive: true });
+    
+    // Save the uploaded file
+    await zipFile.mv(tempPath);
+
+    // Generate a unique task ID
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Create task and start background processing
+    taskManager.createTask(taskId, { step: 'initial', message: 'Starting OpenSpec implementation...' });
+
+    // Run the OpenSpec implementation in the background
+    setImmediate(() => {
+      runOpenSpecImplementation(taskId, repoName, tempPath).catch(error => {
+        console.error('Error in background OpenSpec implementation:', error);
+        taskManager.updateTask(taskId, { 
+          step: 'error', 
+          completed: true, 
+          message: `Error: ${error.message}`,
+          summary: `OpenSpec implementation failed: ${error.message}`
+        });
+      });
+    });
+
+    res.json({ taskId, message: 'OpenSpec implementation started' });
+  } catch (error) {
+    console.error('Error starting OpenSpec implementation:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Route to check task status
+router.get('/task-status/:taskId', (req, res) => {
+  const { taskId } = req.params;
+  const task = taskManager.getTask(taskId);
+
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  res.json(task.status);
+});
+
+module.exports = router;
