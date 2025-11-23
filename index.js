@@ -1157,27 +1157,14 @@ app.get('/commit-info', async (req, res) => {
  *         description: "The name of the commit/branch/tag (default: main)"
  *         default: "main"
  *         example: "main"
- *       - in: query
- *         name: targetDir
- *         required: false
- *         schema:
- *           type: string
- *         description: "Target directory to download the repository (default: temp directory)"
- *         example: "./temp/downloaded-repo"
  *     responses:
  *       200:
- *         description: Repository downloaded successfully
+ *         description: Repository zip file downloaded successfully
  *         content:
- *           application/json:
+ *           application/zip:
  *             schema:
- *               type: object
- *               properties:
- *                 message:
- *                   type: string
- *                   example: "Repository downloaded successfully to: ./temp/downloaded-repo"
- *                 targetDir:
- *                   type: string
- *                   example: "./temp/downloaded-repo"
+ *               type: string
+ *               format: binary
  *       500:
  *         description: Error downloading repository
  *         content:
@@ -1191,22 +1178,25 @@ app.get('/commit-info', async (req, res) => {
  */
 app.get('/download-repo', async (req, res) => {
   try {
-    const { owner, repo, ref = 'main', targetDir } = req.query;
+    const { owner, repo, ref = 'main' } = req.query;
     if (!owner || !repo) {
       return res.status(400).json({ error: 'Owner and repo parameters are required' });
     }
     
-    // If targetDir not specified, create a temporary directory
-    const downloadDir = targetDir || path.join(__dirname, 'temp', `repo_${Date.now()}`);
-    await fsPromises.mkdir(downloadDir, { recursive: true });
+    // Download the repository archive as a buffer
+    const zipBuffer = await githubApp.downloadRepositoryAsBuffer(owner, repo, ref);
     
-    const result = await githubApp.downloadRepository(owner, repo, ref, downloadDir);
+    // Set response headers for file download
+    const zipName = `${repo}_${ref}.zip`;
+    res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Length', zipBuffer.length);
     
-    res.json({
-      message: `Repository downloaded successfully to: ${result}`,
-      targetDir: result
-    });
+    // Send the buffer directly to the response
+    res.send(zipBuffer);
+    
   } catch (error) {
+    console.error('Error in download-repo endpoint:', error);
     res.status(500).json({ error: error.message });
   }
 });

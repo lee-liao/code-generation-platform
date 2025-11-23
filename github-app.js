@@ -499,6 +499,28 @@ class GitHubApp {
       throw error;
     }
   }
+
+  // Get repository archive as buffer (for direct streaming)
+  async downloadRepositoryAsBuffer(owner, repo, ref) {
+    const github = await this.getGitHubClientForOwner(owner);
+
+    try {
+      const response = await github.repos.downloadZipballArchive({
+        owner,
+        repo,
+        ref,
+      });
+
+      // response.data is an ArrayBuffer, convert to buffer
+      const buffer = Buffer.from(response.data);
+
+      console.log(`Repository archive downloaded as buffer for: ${owner}/${repo}`);
+      return buffer;
+    } catch (error) {
+      console.error('Error downloading repository as buffer:', error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = { GitHubApp };
