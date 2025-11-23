@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
 const fileUpload = require('express-fileupload');
+const fsPromises = require('fs').promises;
 const path = require('path');
 const swaggerJsdoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
@@ -1121,6 +1122,90 @@ app.get('/commit-info', async (req, res) => {
     }
     const result = await githubApp.getCommit(owner, repo, ref);
     res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint to download repository as zip file
+/**
+ * @swagger
+ * /download-repo:
+ *   get:
+ *     summary: Download GitHub repository as zip file
+ *     description: Downloads a GitHub repository as a zip archive
+ *     parameters:
+ *       - in: query
+ *         name: owner
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Repository owner (username or organization)
+ *         example: "username"
+ *       - in: query
+ *         name: repo
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Repository name
+ *         example: "my-repo"
+ *       - in: query
+ *         name: ref
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: "The name of the commit/branch/tag (default: main)"
+ *         default: "main"
+ *         example: "main"
+ *       - in: query
+ *         name: targetDir
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: "Target directory to download the repository (default: temp directory)"
+ *         example: "./temp/downloaded-repo"
+ *     responses:
+ *       200:
+ *         description: Repository downloaded successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 message:
+ *                   type: string
+ *                   example: "Repository downloaded successfully to: ./temp/downloaded-repo"
+ *                 targetDir:
+ *                   type: string
+ *                   example: "./temp/downloaded-repo"
+ *       500:
+ *         description: Error downloading repository
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 error:
+ *                   type: string
+ *                   example: "Error downloading repository"
+ */
+app.get('/download-repo', async (req, res) => {
+  try {
+    const { owner, repo, ref = 'main', targetDir } = req.query;
+    if (!owner || !repo) {
+      return res.status(400).json({ error: 'Owner and repo parameters are required' });
+    }
+    
+    // If targetDir not specified, create a temporary directory
+    const downloadDir = targetDir || path.join(__dirname, 'temp', `repo_${Date.now()}`);
+    await fsPromises.mkdir(downloadDir, { recursive: true });
+    
+    const result = await githubApp.downloadRepository(owner, repo, ref, downloadDir);
+    
+    res.json({
+      message: `Repository downloaded successfully to: ${result}`,
+      targetDir: result
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
