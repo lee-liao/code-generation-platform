@@ -30,10 +30,10 @@ To run this application using Docker, follow these steps:
 
 ### Running the Application
 
-To start the application:
+To start the application with forcing build and running docker container in the background.
 
 ```bash
-docker-compose up -d
+docker-compose up --build -d
 ```
 
 The application will be available at `http://localhost:8510` (host port 8510 mapped to container port 3000).
