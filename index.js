@@ -101,25 +101,36 @@ app.post('/webhook', (req, res) => {
 
   console.log(`Received webhook event: ${event}, ID: ${id}`);
 
+  // Parse the body to JSON
+  let payload;
+  try {
+    payload = JSON.parse(body.toString());
+  } catch (error) {
+    console.error('Error parsing webhook body:', error);
+    return res.status(400).send('Invalid JSON');
+  }
+
   // Handle different GitHub events
   switch (event) {
     case 'installation':
       // Handle GitHub App installation events
-      const installationAction = req.body.action;
-      const installationId = req.body.installation?.id;
-      const accountLogin = req.body.installation?.account?.login;
-      const accountId = req.body.installation?.account?.id;
+      const installationAction = payload.action;
+      const installationId = payload.installation?.id;
+      const accountLogin = payload.installation?.account?.login;
+      const accountId = payload.installation?.account?.id;
 
       console.log(`Installation ${installationAction} event for account: ${accountLogin}, ID: ${installationId}, Account ID: ${accountId}`);
 
-      if (installationAction === 'created') {
+      if (installationAction === 'created' || installationAction === 'new_permissions_accepted') {
         // Store the account to installation ID mapping persistently
-        installationStorage.updateInstallation(accountLogin, installationId);
-        installationStorage.updateInstallation(accountId, installationId);
-        console.log(`Mapped account ${accountLogin} (ID: ${accountId}) to installation ID: ${installationId}`);
+        if (accountLogin && installationId) {
+          installationStorage.updateInstallation(accountLogin, installationId);
+          installationStorage.updateInstallation(accountId, installationId);
+          console.log(`Mapped account ${accountLogin} (ID: ${accountId}) to installation ID: ${installationId}`);
 
-        // Also store the most recent installation ID for backwards compatibility during transition
-        process.env.GITHUB_INSTALLATION_ID = installationId;
+          // Also store the most recent installation ID for backwards compatibility during transition
+          process.env.GITHUB_INSTALLATION_ID = installationId;
+        }
       } else if (installationAction === 'deleted') {
         // Remove the mapping when the installation is deleted
         installationStorage.removeInstallation(accountLogin);
@@ -130,13 +141,13 @@ app.post('/webhook', (req, res) => {
 
     case 'installation_repositories':
       // Handle repository addition/removal from installation
-      const repositoriesAction = req.body.action;
-      const installationIdRepo = req.body.installation?.id;
+      const repositoriesAction = payload.action;
+      const installationIdRepo = payload.installation?.id;
       console.log(`Repository ${repositoriesAction} event for installation: ${installationIdRepo}`);
 
       // Update installation mapping if needed
-      const repoAccountLogin = req.body.installation?.account?.login;
-      const repoAccountId = req.body.installation?.account?.id;
+      const repoAccountLogin = payload.installation?.account?.login;
+      const repoAccountId = payload.installation?.account?.id;
       if (repoAccountLogin && installationIdRepo) {
         installationStorage.updateInstallation(repoAccountLogin, installationIdRepo);
       }
@@ -147,19 +158,36 @@ app.post('/webhook', (req, res) => {
 
     case 'push':
       // Handle push events
-      const repoName = req.body.repository?.name;
-      const ref = req.body.ref;
-      const pusherLogin = req.body.pusher?.name;
+      const repoName = payload.repository?.name;
+      const ref = payload.ref;
+      const pusherLogin = payload.pusher?.name;
       console.log(`Push event for repository: ${repoName}, ref: ${ref}, pusher: ${pusherLogin}`);
       break;
 
     case 'pull_request':
       // Handle pull request events
-      const prAction = req.body.action;
-      const prNumber = req.body.number;
-      const prRepo = req.body.repository?.name;
-      const prUserLogin = req.body.sender?.login;
+      const prAction = payload.action;
+      const prNumber = payload.number;
+      const prRepo = payload.repository?.name;
+      const prUserLogin = payload.sender?.login;
       console.log(`Pull request ${prAction} event for PR #${prNumber} in ${prRepo} by ${prUserLogin}`);
+      break;
+
+    case 'star':
+      // Handle star events
+      const starAction = payload.action;
+      const starRepo = payload.repository?.name;
+      const starUser = payload.sender?.login;
+      console.log(`Star event: ${starAction} for ${starRepo} by ${starUser}`);
+      break;
+
+    case 'issues':
+      // Handle issues events
+      const issueAction = payload.action;
+      const issueNumber = payload.issue?.number;
+      const issueRepo = payload.repository?.name;
+      const issueUser = payload.sender?.login;
+      console.log(`Issue ${issueAction} event for #${issueNumber} in ${issueRepo} by ${issueUser}`);
       break;
 
     default:
@@ -1182,19 +1210,19 @@ app.get('/download-repo', async (req, res) => {
     if (!owner || !repo) {
       return res.status(400).json({ error: 'Owner and repo parameters are required' });
     }
-    
+
     // Download the repository archive as a buffer
     const zipBuffer = await githubApp.downloadRepositoryAsBuffer(owner, repo, ref);
-    
+
     // Set response headers for file download
     const zipName = `${repo}_${ref}.zip`;
     res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Length', zipBuffer.length);
-    
+
     // Send the buffer directly to the response
     res.send(zipBuffer);
-    
+
   } catch (error) {
     console.error('Error in download-repo endpoint:', error);
     res.status(500).json({ error: error.message });
