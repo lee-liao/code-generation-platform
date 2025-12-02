@@ -204,6 +204,7 @@ app.post('/webhook', (req, res) => {
  * /create-repo:
  *   post:
  *     summary: Create a new GitHub repository
+ *     tags: [GitHub API]
  *     description: Creates a new GitHub repository using a personal access token
  *     requestBody:
  *       required: true
@@ -285,6 +286,7 @@ app.post('/create-repo', async (req, res) => {
  * /create-branch:
  *   post:
  *     summary: Create a new branch in a repository
+ *     tags: [GitHub API]
  *     description: Creates a new branch from a source branch in the specified repository
  *     requestBody:
  *       required: true
@@ -354,6 +356,7 @@ app.post('/create-branch', async (req, res) => {
  * /add-file:
  *   post:
  *     summary: Add or update a file in a repository
+ *     tags: [GitHub API]
  *     description: Adds or updates a file in the specified repository
  *     requestBody:
  *       required: true
@@ -432,6 +435,7 @@ app.post('/add-file', async (req, res) => {
  * /create-pull-request:
  *   post:
  *     summary: Create a new pull request
+ *     tags: [GitHub API]
  *     description: Creates a new pull request between branches
  *     requestBody:
  *       required: true
@@ -509,6 +513,7 @@ app.post('/create-pull-request', async (req, res) => {
  * /installation-info:
  *   get:
  *     summary: Get GitHub App installation information
+ *     tags: [GitHub API]
  *     description: Retrieves information about the GitHub App installation for the authenticated user
  *     responses:
  *       200:
@@ -556,6 +561,7 @@ app.get('/installation-info', async (req, res) => {
  * /user-installation-status:
  *   get:
  *     summary: Check user's GitHub App installation status
+ *     tags: [GitHub API]
  *     description: Checks if the GitHub App is installed in the user's account
  *     parameters:
  *       - in: query
@@ -646,6 +652,7 @@ app.get('/user-installation-status', async (req, res) => {
  * /branches:
  *   get:
  *     summary: Get all branches from a repository
+ *     tags: [GitHub API]
  *     description: Retrieves all branches from the specified repository
  *     parameters:
  *       - in: query
@@ -711,6 +718,7 @@ app.get('/branches', async (req, res) => {
  * /branch:
  *   get:
  *     summary: Get a specific branch from a repository
+ *     tags: [GitHub API]
  *     description: Retrieves information about a specific branch in the specified repository
  *     parameters:
  *       - in: query
@@ -781,6 +789,7 @@ app.get('/branch', async (req, res) => {
  * /repository:
  *   get:
  *     summary: Get repository information
+ *     tags: [GitHub API]
  *     description: Retrieves information about the specified repository
  *     parameters:
  *       - in: query
@@ -850,6 +859,7 @@ app.get('/repository', async (req, res) => {
  * /commit:
  *   post:
  *     summary: Commit changes to a repository
+ *     tags: [GitHub API]
  *     description: Creates a commit with multiple file changes in the specified repository
  *     requestBody:
  *       required: true
@@ -947,6 +957,7 @@ app.post('/commit', async (req, res) => {
  * /contents:
  *   get:
  *     summary: Get repository contents
+ *     tags: [GitHub API]
  *     description: Retrieves the contents of a repository path
  *     parameters:
  *       - in: query
@@ -1015,6 +1026,7 @@ app.get('/contents', async (req, res) => {
  * /compare:
  *   get:
  *     summary: Compare two commits
+ *     tags: [GitHub API]
  *     description: Compares two commits in a repository
  *     parameters:
  *       - in: query
@@ -1091,6 +1103,7 @@ app.get('/compare', async (req, res) => {
  * /commit-info:
  *   get:
  *     summary: Get commit information
+ *     tags: [GitHub API]
  *     description: Retrieves information about a specific commit
  *     parameters:
  *       - in: query
@@ -1161,6 +1174,7 @@ app.get('/commit-info', async (req, res) => {
  * /download-repo:
  *   get:
  *     summary: Download GitHub repository as zip file
+ *     tags: [GitHub API]
  *     description: Downloads a GitHub repository as a zip archive
  *     parameters:
  *       - in: query
