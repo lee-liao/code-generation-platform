@@ -22,6 +22,38 @@ const projectTemplates = new Map();
  * Initialize a new OpenSpec project
  * POST /api/openspec/projects
  */
+/**
+ * @swagger
+ * /openspec-workflow/projects:
+ *   post:
+ *     summary: Initialize a new OpenSpec project
+ *     tags: [OpenSpec Workflow]
+ *     description: Creates a new OpenSpec project session
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               projectName:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               owner:
+ *                 type: string
+ *               repository:
+ *                 type: string
+ *               isPrivate:
+ *                 type: boolean
+ *     responses:
+ *       200:
+ *         description: Project created successfully
+ *       400:
+ *         description: Missing required fields
+ *       500:
+ *         description: Error creating project
+ */
 router.post('/projects', async (req, res) => {
   try {
     const { projectName, description, owner, repository, isPrivate = false } = req.body;
@@ -66,6 +98,27 @@ router.post('/projects', async (req, res) => {
  * Get project information
  * GET /api/openspec/projects/:projectId
  */
+/**
+ * @swagger
+ * /openspec-workflow/projects/{projectId}:
+ *   get:
+ *     summary: Get project information
+ *     tags: [OpenSpec Workflow]
+ *     description: Retrieves information about an existing OpenSpec project
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Project retrieved successfully
+ *       404:
+ *         description: Project not found
+ *       500:
+ *         description: Error getting project
+ */
 router.get('/projects/:projectId', (req, res) => {
   try {
     const { projectId } = req.params;
@@ -88,6 +141,39 @@ router.get('/projects/:projectId', (req, res) => {
 /**
  * Upload and validate OpenSpec file
  * POST /api/openspec/projects/:projectId/upload
+ */
+/**
+ * @swagger
+ * /openspec-workflow/projects/{projectId}/upload:
+ *   post:
+ *     summary: Upload and validate OpenSpec file
+ *     tags: [OpenSpec Workflow]
+ *     description: Uploads an OpenSpec zip file for a project
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               openspecFile:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: File uploaded and validated successfully
+ *       400:
+ *         description: Invalid file or structure
+ *       404:
+ *         description: Project not found
+ *       500:
+ *         description: Error uploading file
  */
 router.post('/projects/:projectId/upload', async (req, res) => {
   try {
@@ -152,6 +238,27 @@ router.post('/projects/:projectId/upload', async (req, res) => {
  * Get specification tree structure
  * GET /api/openspec/projects/:projectId/spec-tree
  */
+/**
+ * @swagger
+ * /openspec-workflow/projects/{projectId}/spec-tree:
+ *   get:
+ *     summary: Get specification tree structure
+ *     tags: [OpenSpec Workflow]
+ *     description: Retrieves the tree structure of specifications for a project
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Spec tree retrieved successfully
+ *       404:
+ *         description: Project not found
+ *       500:
+ *         description: Error getting spec tree
+ */
 router.get('/projects/:projectId/spec-tree', (req, res) => {
   try {
     const { projectId } = req.params;
@@ -174,6 +281,32 @@ router.get('/projects/:projectId/spec-tree', (req, res) => {
 /**
  * Get specification content
  * GET /api/openspec/projects/:projectId/specs/:specId
+ */
+/**
+ * @swagger
+ * /openspec-workflow/projects/{projectId}/specs/{specId}:
+ *   get:
+ *     summary: Get specification content
+ *     tags: [OpenSpec Workflow]
+ *     description: Retrieves content of a specific specification
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: specId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Specification retrieved successfully
+ *       404:
+ *         description: Project or specification not found
+ *       500:
+ *         description: Error getting specification
  */
 router.get('/projects/:projectId/specs/:specId', async (req, res) => {
   try {
@@ -215,6 +348,43 @@ router.get('/projects/:projectId/specs/:specId', async (req, res) => {
 /**
  * Update specification content
  * PUT /api/openspec/projects/:projectId/specs/:specId
+ */
+/**
+ * @swagger
+ * /openspec-workflow/projects/{projectId}/specs/{specId}:
+ *   put:
+ *     summary: Update specification content
+ *     tags: [OpenSpec Workflow]
+ *     description: Updates the content of a specific specification
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: specId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               content:
+ *                 type: string
+ *               suggestions:
+ *                 type: array
+ *     responses:
+ *       200:
+ *         description: Specification updated successfully
+ *       404:
+ *         description: Project or specification not found
+ *       500:
+ *         description: Error updating specification
  */
 router.put('/projects/:projectId/specs/:specId', async (req, res) => {
   try {
@@ -264,6 +434,43 @@ router.put('/projects/:projectId/specs/:specId', async (req, res) => {
 /**
  * Generate AI suggestions for specification
  * POST /api/openspec/projects/:projectId/specs/:specId/suggestions
+ */
+/**
+ * @swagger
+ * /openspec-workflow/projects/{projectId}/specs/{specId}/suggestions:
+ *   post:
+ *     summary: Generate AI suggestions for specification
+ *     tags: [OpenSpec Workflow]
+ *     description: Generates AI suggestions for improving a specification
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: path
+ *         name: specId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               context:
+ *                 type: string
+ *               requirement:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Suggestions generated successfully
+ *       404:
+ *         description: Project or specification not found
+ *       500:
+ *         description: Error generating suggestions
  */
 router.post('/projects/:projectId/specs/:specId/suggestions', async (req, res) => {
   try {
@@ -343,6 +550,39 @@ Format each suggestion as a complete requirement statement that follows OpenSpec
  * Create GitHub repository and generate codebase
  * POST /api/openspec/projects/:projectId/generate
  */
+/**
+ * @swagger
+ * /openspec-workflow/projects/{projectId}/generate:
+ *   post:
+ *     summary: Create GitHub repository and generate codebase
+ *     tags: [OpenSpec Workflow]
+ *     description: Starts the codebase generation process for a project
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               branchName:
+ *                 type: string
+ *                 default: "main"
+ *     responses:
+ *       200:
+ *         description: Codebase generation started successfully
+ *       400:
+ *         description: No specifications available
+ *       404:
+ *         description: Project not found
+ *       500:
+ *         description: Error starting generation
+ */
 router.post('/projects/:projectId/generate', async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -377,6 +617,27 @@ router.post('/projects/:projectId/generate', async (req, res) => {
  * Get generation status
  * GET /api/openspec/tasks/:taskId/status
  */
+/**
+ * @swagger
+ * /openspec-workflow/tasks/{taskId}/status:
+ *   get:
+ *     summary: Get generation status
+ *     tags: [OpenSpec Workflow]
+ *     description: Retrieves the status of a generation task
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Task status retrieved successfully
+ *       404:
+ *         description: Task not found
+ *       500:
+ *         description: Error getting task status
+ */
 router.get('/tasks/:taskId/status', (req, res) => {
   try {
     const { taskId } = req.params;
@@ -399,6 +660,43 @@ router.get('/tasks/:taskId/status', (req, res) => {
 /**
  * Create pull request for generated code
  * POST /api/openspec/projects/:projectId/pull-request
+ */
+/**
+ * @swagger
+ * /openspec-workflow/projects/{projectId}/pull-request:
+ *   post:
+ *     summary: Create pull request for generated code
+ *     tags: [OpenSpec Workflow]
+ *     description: Creates a pull request for the generated code
+ *     parameters:
+ *       - in: path
+ *         name: projectId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               title:
+ *                 type: string
+ *               description:
+ *                 type: string
+ *               sourceBranch:
+ *                 type: string
+ *               targetBranch:
+ *                 type: string
+ *                 default: "main"
+ *     responses:
+ *       200:
+ *         description: Pull request created successfully
+ *       404:
+ *         description: Project not found
+ *       500:
+ *         description: Error creating pull request
  */
 router.post('/projects/:projectId/pull-request', async (req, res) => {
   try {

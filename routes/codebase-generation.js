@@ -494,6 +494,53 @@ async function getAllFiles(dirPath) {
 }
 
 // Route to start codebase generation
+/**
+ * @swagger
+ * /codebase-generation/generate-codebase:
+ *   post:
+ *     summary: Generate a new codebase from template
+ *     tags: [Codebase Generation]
+ *     description: Creates a new repository based on a template project and applies AI modifications
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               projectFolder:
+ *                 type: string
+ *                 description: Path to the template project directory
+ *                 example: "D:/templates/my-project-template"
+ *               repoName:
+ *                 type: string
+ *                 description: Name for the new GitHub repository
+ *                 example: "my-new-project"
+ *               repoDescription:
+ *                 type: string
+ *                 description: Description for the new GitHub repository
+ *                 example: "A new project generated from template"
+ *               verboseLogging:
+ *                 type: boolean
+ *                 description: Enable verbose logging for Claude output
+ *                 default: false
+ *     responses:
+ *       200:
+ *         description: Codebase generation started successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 taskId:
+ *                   type: string
+ *                   description: Unique identifier for the background task
+ *                   example: "task_1234567890_abc123def"
+ *       400:
+ *         description: Bad request - missing required fields
+ *       500:
+ *         description: Error starting codebase generation
+ */
 router.post('/generate-codebase', async (req, res) => {
   try {
     const { projectFolder, repoName, repoDescription, verboseLogging } = req.body;
@@ -524,6 +571,40 @@ router.post('/generate-codebase', async (req, res) => {
 });
 
 // Route to check task status
+/**
+ * @swagger
+ * /codebase-generation/task-status/{taskId}:
+ *   get:
+ *     summary: Check status of a codebase generation task
+ *     tags: [Codebase Generation]
+ *     description: Retrieves the current status of a background codebase generation task
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the background task
+ *     responses:
+ *       200:
+ *         description: Task status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 step:
+ *                   type: string
+ *                   description: Current step of the task
+ *                 message:
+ *                   type: string
+ *                   description: Human-readable status message
+ *                 completed:
+ *                   type: boolean
+ *                   description: Whether the task has completed
+ *       404:
+ *         description: Task not found
+ */
 router.get('/task-status/:taskId', (req, res) => {
   const { taskId } = req.params;
   const task = taskManager.getTask(taskId);
@@ -536,6 +617,40 @@ router.get('/task-status/:taskId', (req, res) => {
 });
 
 // Endpoint to kill a process by PID
+/**
+ * @swagger
+ * /codebase-generation/kill-process/{taskId}:
+ *   post:
+ *     summary: Kill a running codebase generation task process
+ *     tags: [Codebase Generation]
+ *     description: Terminates the process associated with a background codebase generation task
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the background task
+ *     responses:
+ *       200:
+ *         description: Process terminated successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                 pid:
+ *                   type: integer
+ *       404:
+ *         description: Task or process not found
+ *       500:
+ *         description: Error terminating process
+ */
 router.post('/kill-process/:taskId', (req, res) => {
   const { taskId } = req.params;
   const task = taskManager.getTask(taskId);

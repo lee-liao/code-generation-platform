@@ -596,6 +596,45 @@ async function runOpenSpecImplementation(taskId, repoName, zipPath) {
 }
 
 // Route to handle OpenSpec implementation request
+/**
+ * @swagger
+ * /openspec-implementation-agent/openspec-implement:
+ *   post:
+ *     summary: Implement OpenSpec changes
+ *     tags: [OpenSpec Implementation]
+ *     description: Uploads an OpenSpec zip file and starts the implementation process
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               zipFile:
+ *                 type: string
+ *                 format: binary
+ *                 description: The OpenSpec zip file containing changes
+ *               repoName:
+ *                 type: string
+ *                 description: Name of the repository to implement changes in
+ *     responses:
+ *       200:
+ *         description: Implementation process started successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 taskId:
+ *                   type: string
+ *                   description: Unique identifier for the background task
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Missing required fields or invalid file type
+ *       500:
+ *         description: Error starting implementation
+ */
 router.post('/openspec-implement', async (req, res) => {
   try {
     // Check if this is a multipart form request (for file upload)
@@ -645,6 +684,37 @@ router.post('/openspec-implement', async (req, res) => {
 });
 
 // Route to check task status
+/**
+ * @swagger
+ * /openspec-implementation-agent/task-status/{taskId}:
+ *   get:
+ *     summary: Check status of an OpenSpec implementation task
+ *     tags: [OpenSpec Implementation]
+ *     description: Retrieves the current status of a background OpenSpec implementation task
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the background task
+ *     responses:
+ *       200:
+ *         description: Task status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 step:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ *                 completed:
+ *                   type: boolean
+ *       404:
+ *         description: Task not found
+ */
 router.get('/task-status/:taskId', (req, res) => {
   const { taskId } = req.params;
   const task = taskManager.getTask(taskId);

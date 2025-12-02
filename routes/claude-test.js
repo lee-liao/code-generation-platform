@@ -66,10 +66,10 @@ async function runClaudeCommandTest(taskId, workingDir) {
     // Test different approaches to find Claude CLI
     const testClaudeAvailability = async (env) => {
       try {
-        execSync('cmd /c claude --version', { 
-          stdio: 'pipe', 
+        execSync('cmd /c claude --version', {
+          stdio: 'pipe',
           env: env,
-          cwd: workingDir 
+          cwd: workingDir
         });
         return true;
       } catch (error) {
@@ -78,12 +78,12 @@ async function runClaudeCommandTest(taskId, workingDir) {
           ...env,
           PATH: `${process.env.PATH || ''};${process.env.USERPROFILE || process.env.HOMEPATH}\\AppData\\Roaming\\npm;D:\\Users\\liao_\\AppData\\Roaming\\npm;C:\\Users\\%USERNAME%\\AppData\\Roaming\\npm`
         };
-        
+
         try {
-          execSync('cmd /c claude --version', { 
-            stdio: 'pipe', 
+          execSync('cmd /c claude --version', {
+            stdio: 'pipe',
             env: enhancedEnv,
-            cwd: workingDir 
+            cwd: workingDir
           });
           // Update environment with enhanced PATH
           environment = enhancedEnv;
@@ -91,10 +91,10 @@ async function runClaudeCommandTest(taskId, workingDir) {
         } catch (secondError) {
           // Try direct path approach
           try {
-            execSync('cmd /c "D:\\Users\\liao_\\AppData\\Roaming\\npm\\claude.cmd" --version', { 
-              stdio: 'pipe', 
+            execSync('cmd /c "D:\\Users\\liao_\\AppData\\Roaming\\npm\\claude.cmd" --version', {
+              stdio: 'pipe',
               env: env,
-              cwd: workingDir 
+              cwd: workingDir
             });
             // Update environment with Claude directory in PATH
             environment = {
@@ -176,7 +176,7 @@ async function runClaudeCommandTest(taskId, workingDir) {
         fs.writeFile(outputPath, outputContent)
           .then(() => {
             logOperation(`Claude output written to: ${outputPath}`);
-            
+
             taskManager.updateTask(taskId, {
               step: 'completed',
               completed: true,
@@ -185,7 +185,7 @@ async function runClaudeCommandTest(taskId, workingDir) {
               outputFilePath: outputPath,
               endTime: new Date()
             });
-            
+
             resolve({
               success: true,
               exitCode: code,
@@ -201,14 +201,14 @@ async function runClaudeCommandTest(taskId, workingDir) {
       childProcess.on('error', (error) => {
         clearTimeout(timeoutId); // Clear timeout on error
         logOperation(`Claude command error: ${error.message}`);
-        
+
         taskManager.updateTask(taskId, {
           step: 'error',
           completed: true,
           message: `Command error: ${error.message}`,
           error: error.message
         });
-        
+
         reject(error);
       });
     });
@@ -225,10 +225,48 @@ async function runClaudeCommandTest(taskId, workingDir) {
 }
 
 // Route to start the Claude command test
+/**
+ * @swagger
+ * /claude-test/test-claude-command:
+ *   post:
+ *     summary: Test Claude CLI command execution
+ *     tags: [Claude Test]
+ *     description: Runs a test command using the Claude CLI to verify availability and functionality
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               workingDir:
+ *                 type: string
+ *                 description: Directory where the test command should run
+ *                 example: "D:/temp/test-dir"
+ *     responses:
+ *       200:
+ *         description: Test started successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 taskId:
+ *                   type: string
+ *                   description: Unique identifier for the test task
+ *                 workingDir:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ *       400:
+ *         description: Missing working directory
+ *       500:
+ *         description: Error starting test
+ */
 router.post('/test-claude-command', async (req, res) => {
   try {
     const { workingDir } = req.body;
-    
+
     if (!workingDir) {
       return res.status(400).json({ error: 'Working directory is required' });
     }
@@ -236,17 +274,17 @@ router.post('/test-claude-command', async (req, res) => {
     // Generate a unique task ID
     const taskId = `test_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     console.log(`[Task Creation] Creating task with ID: ${taskId}`);
-    
+
     // Create task and start background processing
     taskManager.createTask(taskId, { step: 'initial', message: 'Starting Claude command test...' });
     console.log(`[Task Creation] Task created, available tasks now:`, Array.from(taskManager.tasks.keys()));
-    
+
     // Run the Claude command in the background
     setImmediate(() => {
       console.log(`[Task Execution] Starting Claude command test for task: ${taskId}`);
       runClaudeCommandTest(taskId, workingDir);
     });
-    
+
     res.json({ taskId, workingDir, message: 'Claude command test started' });
   } catch (error) {
     console.error('Error starting Claude command test:', error);
@@ -255,23 +293,69 @@ router.post('/test-claude-command', async (req, res) => {
 });
 
 // Route to check task status
+/**
+ * @swagger
+ * /claude-test/task-status/{taskId}:
+ *   get:
+ *     summary: Check status of a Claude test task
+ *     tags: [Claude Test]
+ *     description: Retrieves the current status of a background Claude test task
+ *     parameters:
+ *       - in: path
+ *         name: taskId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Unique identifier of the test task
+ *     responses:
+ *       200:
+ *         description: Task status retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 step:
+ *                   type: string
+ *                 message:
+ *                   type: string
+ *                 completed:
+ *                   type: boolean
+ *       404:
+ *         description: Task not found
+ */
 router.get('/task-status/:taskId', (req, res) => {
   const { taskId } = req.params;
   console.log(`[Status Check] Requested task: ${taskId}`);
   console.log(`[Status Check] Available tasks:`, Array.from(taskManager.tasks.keys()));
-  
+
   const task = taskManager.getTask(taskId);
-  
+
   if (!task) {
     console.log(`[Status Check] Task ${taskId} not found in task manager`);
     return res.status(404).json({ error: 'Task not found', taskId: taskId, availableTasks: Array.from(taskManager.tasks.keys()) });
   }
-  
+
   console.log(`[Status Check] Task ${taskId} found with status:`, task.status);
   res.json(task.status);
 });
 
 // Serve the test HTML page
+/**
+ * @swagger
+ * /claude-test/claude-test:
+ *   get:
+ *     summary: Get Claude test page
+ *     tags: [Claude Test]
+ *     description: Serves the HTML page for testing Claude CLI functionality
+ *     responses:
+ *       200:
+ *         description: HTML page served successfully
+ *         content:
+ *           text/html:
+ *             schema:
+ *               type: string
+ */
 router.get('/claude-test', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'tests', 'claude-test.html'));
 });
