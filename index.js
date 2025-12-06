@@ -20,7 +20,7 @@ const port = process.env.PORT || 3000;
 app.use('/webhook', express.raw({ type: 'application/json' }));
 
 // Parse JSON bodies for other routes
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // Add file upload middleware
 app.use(fileUpload({
@@ -853,14 +853,14 @@ app.get('/repository', async (req, res) => {
   }
 });
 
-// Endpoint to commit changes to repository
+// Endpoint to push changes to repository
 /**
  * @swagger
- * /commit:
+ * /push-changes:
  *   post:
- *     summary: Commit changes to a repository
+ *     summary: Push changes to a repository
  *     tags: [GitHub API]
- *     description: Creates a commit with multiple file changes in the specified repository
+ *     description: Creates a commit with multiple file changes and pushes to the specified branch
  *     requestBody:
  *       required: true
  *       content:
@@ -906,7 +906,7 @@ app.get('/repository', async (req, res) => {
  *                 example: "main"
  *     responses:
  *       200:
- *         description: Changes committed successfully
+ *         description: Changes pushed successfully
  *         content:
  *           application/json:
  *             schema:
@@ -925,7 +925,7 @@ app.get('/repository', async (req, res) => {
  *                       type: string
  *                       example: "refs/heads/main"
  *       500:
- *         description: Error committing changes
+ *         description: Error pushing changes
  *         content:
  *           application/json:
  *             schema:
@@ -933,9 +933,9 @@ app.get('/repository', async (req, res) => {
  *               properties:
  *                 error:
  *                   type: string
- *                   example: "Error committing changes"
+ *                   example: "Error pushing changes"
  */
-app.post('/commit', async (req, res) => {
+app.post('/push-changes', async (req, res) => {
   try {
     const { owner, repo, commitMessage, files, branch = 'main', parentBranch = 'main' } = req.body;
     if (!owner || !repo || !commitMessage || !files) {
@@ -944,7 +944,7 @@ app.post('/commit', async (req, res) => {
     if (!Array.isArray(files)) {
       return res.status(400).json({ error: 'Files must be an array of file objects' });
     }
-    const result = await githubApp.commitChanges(owner, repo, commitMessage, files, branch, parentBranch);
+    const result = await githubApp.pushChanges(owner, repo, commitMessage, files, branch, parentBranch);
     res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });

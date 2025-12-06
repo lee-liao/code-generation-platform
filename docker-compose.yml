@@ -20,6 +20,8 @@ services:
       PORT: ${PORT:-3000}
       # Snippets library path
       SNIPPETS_PATH: ${SNIPPETS_PATH:-./simplest-snippets}
+      # Output directory for generated codebases
+      GENERATION_OUTPUT_DIR: /app/temp
     volumes:
       # Mount the private key from .keystore if it exists
       - ./.keystore:/app/.keystore:ro
@@ -27,6 +29,8 @@ services:
       - ./simplest-snippets:/app/simplest-snippets:ro
       # Mount openspec directory (referenced in codebase generation)
       - ./openspec:/app/openspec:ro
+      # Mount temp directory for generated codebases (Read-Write)
+      - ./temp:/app/temp
     restart: unless-stopped
     networks:
       - app-network

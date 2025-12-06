@@ -65,17 +65,26 @@ async function validateInputs(projectFolder, repoName, githubApp) {
     throw new Error(`Project folder does not exist: ${projectFolder}`);
   }
 
-  // Verify there isn't already a folder with repo name as sibling
-  const parentDir = path.dirname(projectFolder);
-  const siblingRepoPath = path.join(parentDir, repoName);
-  console.log(`Checking for existing sibling directory: ${siblingRepoPath}`); // Debug log
+  // Verify there isn't already a folder with repo name in the output directory
+  const outputDir = process.env.GENERATION_OUTPUT_DIR || path.join(__dirname, '..', 'temp');
+  const targetRepoPath = path.join(outputDir, repoName);
+
+  console.log(`Checking for existing directory: ${targetRepoPath}`); // Debug log
   try {
-    await fs.access(siblingRepoPath);
-    console.log(`Found existing directory: ${siblingRepoPath}`); // Debug log
-    throw new Error(`Directory already exists: ${siblingRepoPath}`);
+    await fs.access(targetRepoPath);
+    console.log(`Found existing directory: ${targetRepoPath}`); // Debug log
+    throw new Error(`Directory already exists: ${targetRepoPath}`);
   } catch (accessError) {
-    console.log(`Directory does not exist or access error: ${siblingRepoPath}`, accessError.message); // Debug log
-    // Directory doesn't exist, which is what we want
+    if (accessError.code === 'ENOENT') {
+      console.log(`Directory does not exist: ${targetRepoPath}`); // Debug log
+      // Directory doesn't exist, which is what we want
+    } else {
+      // If it's the "Directory already exists" error we just threw, rethrow it
+      if (accessError.message.startsWith('Directory already exists')) {
+        throw accessError;
+      }
+      console.log(`Access error checking directory: ${targetRepoPath}`, accessError.message); // Debug log
+    }
   }
 
   // Verify there isn't already a repository with this name in user's GitHub
@@ -140,13 +149,40 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
     await validateInputs(projectFolder, repoName, githubApp);
     await logOperation('Input validation passed');
 
-    taskManager.updateTask(taskId, { step: 'copying', message: 'Copying project template...' });
-    await logOperation('Copying project template from ' + projectFolder + ' to ' + path.join(path.dirname(projectFolder), repoName));
+    // Determine output directory
+    // Use configured output directory or default to 'temp' folder in project root
+    const outputDir = process.env.GENERATION_OUTPUT_DIR || path.join(__dirname, '..', 'temp');
+
+    // Ensure output directory exists
+    await fs.mkdir(outputDir, { recursive: true });
+
+    const newProjectPath = path.join(outputDir, repoName);
+    await logOperation('Copying project template from ' + projectFolder + ' to ' + newProjectPath);
 
     // Copy project folder to new location
-    const parentDir = path.dirname(projectFolder);
-    const newProjectPath = path.join(parentDir, repoName);
     await copyDirectory(projectFolder, newProjectPath);
+
+    // Initialize local git repo to track changes
+    taskManager.updateTask(taskId, { step: 'git-init', message: 'Initializing local Git repository...' });
+    await logOperation('Initializing local Git repository');
+
+    try {
+      execSync('git init', { cwd: newProjectPath });
+      // Configure git user for this local repo if global config is missing (safety net)
+      try {
+        execSync('git config user.email "bot@openspec.com"', { cwd: newProjectPath });
+        execSync('git config user.name "OpenSpec Bot"', { cwd: newProjectPath });
+      } catch (e) {
+        // Ignore if this fails, might rely on global config
+      }
+
+      execSync('git add .', { cwd: newProjectPath });
+      execSync('git commit -m "Initial commit from template"', { cwd: newProjectPath });
+      await logOperation('Local Git repository initialized and base state committed');
+    } catch (gitError) {
+      await logOperation(`Failed to initialize local git repo: ${gitError.message}`);
+      throw new Error(`Failed to initialize local git repository: ${gitError.message}`);
+    }
 
     taskManager.updateTask(taskId, { step: 'claude-processing', message: 'Running Claude AI processing...' });
     await logOperation('Starting Claude AI processing');
@@ -388,6 +424,54 @@ async function runCodebaseGeneration(taskId, projectFolder, repoName, repoDescri
   }
 }
 
+async function calculateDeltas(projectPath) {
+  try {
+    const { execSync } = require('child_process');
+    // Ensure we capture all changes, including untracked files
+    // We don't need to git add because status --porcelain shows untracked files too
+    const statusOutput = execSync('git status --porcelain', { cwd: projectPath, encoding: 'utf8' });
+
+    const changes = {
+      additions: [],
+      modifications: [],
+      deletions: []
+    };
+
+    const lines = statusOutput.split('\n').filter(line => line.trim() !== '');
+
+    for (const line of lines) {
+      // The status code is the first 2 characters
+      const status = line.substring(0, 2);
+      // The file path starts from index 3
+      const filePath = line.substring(3).trim();
+
+      // Remove quotes if present (git status might quote filenames with spaces)
+      const cleanPath = filePath.replace(/^"|"$/g, '');
+
+      // ?? = Untracked (Addition)
+      // A  = Added (Staged)
+      //  M = Modified (Unstaged)
+      // M  = Modified (Staged)
+      //  D = Deleted (Unstaged)
+      // D  = Deleted (Staged)
+
+      if (status.includes('??') || status.includes('A')) {
+        changes.additions.push(cleanPath);
+      } else if (status.includes('M')) {
+        changes.modifications.push(cleanPath);
+      } else if (status.includes('D')) {
+        changes.deletions.push(cleanPath);
+      }
+    }
+
+    console.log(`Calculated deltas: ${changes.additions.length} additions, ${changes.modifications.length} modifications, ${changes.deletions.length} deletions`);
+    return changes;
+  } catch (error) {
+    console.error('Error calculating deltas:', error);
+    throw error;
+  }
+}
+
 async function copyDirectory(src, dest) {
   await fs.mkdir(dest, { recursive: true });
   const entries = await fs.readdir(src, { withFileTypes: true });
@@ -417,52 +501,129 @@ async function setupGitAndPush(taskId, projectPath, repoName, repoDescription, g
 
   taskManager.updateTask(taskId, { step: 'github-create-repo', message: 'Creating GitHub repository...' });
 
-  // Create repository on GitHub - this will use PAT since GitHub Apps can't create new repos
-  // For a true GitHub App only solution, we would work with existing repos
-  // For now, we'll keep the PAT approach but note that this is a limitation of GitHub Apps
-  const repo = await githubApp.createRepository(username, repoName, repoDescription, false);
+  // Create repository on GitHub
+  await githubApp.createRepository(username, repoName, repoDescription, false);
 
-  taskManager.updateTask(taskId, { step: 'adding-files', message: 'Adding files via GitHub API...' });
+  // Initialize with README to create 'main' branch so we have a parent for subsequent commits
+  await githubApp.addFile(username, repoName, 'README.md', `# ${repoName}\n\n${repoDescription}`, 'main', 'Initial repository creation');
 
-  // Read all files from the project directory and add them via GitHub API
-  await addFilesToRepoViaAPI(taskId, githubApp, username, repoName, projectPath);
+  // 1. Push Base State (Template files)
+  // We get the files that were committed to the local git repo (HEAD)
+  taskManager.updateTask(taskId, { step: 'pushing-base', message: 'Pushing base template...' });
 
-  taskManager.updateTask(taskId, { step: 'completed', message: 'Files successfully added to GitHub repository' });
+  const { execSync } = require('child_process');
+  // Get list of files in HEAD
+  const baseFilesList = execSync('git ls-tree -r HEAD --name-only', { cwd: projectPath, encoding: 'utf8' })
+    .split('\n')
+    .filter(line => line.trim() !== '');
+
+  const baseFiles = [];
+  for (const filePath of baseFilesList) {
+    try {
+      // Read content from git object database to get the unmodified template version
+      // Use quotes around filePath to handle spaces
+      const contentBuffer = execSync(`git show HEAD:"${filePath}"`, { cwd: projectPath });
+      baseFiles.push({
+        path: filePath,
+        content: contentBuffer.toString('base64'),
+        encoding: 'base64'
+      });
+    } catch (err) {
+      console.warn(`Warning: Could not read base file ${filePath}: ${err.message}`);
+    }
+  }
+
+  // Helper function to push files in batches
+  const pushInBatches = async (files, messagePrefix) => {
+    const BATCH_SIZE = 50; // Number of files per batch
+    const TOTAL_FILES = files.length;
+
+    for (let i = 0; i < TOTAL_FILES; i += BATCH_SIZE) {
+      const batch = files.slice(i, i + BATCH_SIZE);
+      const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(TOTAL_FILES / BATCH_SIZE);
+
+      const commitMsg = totalBatches > 1
+        ? `${messagePrefix} (Batch ${batchNumber}/${totalBatches})`
+        : messagePrefix;
+
+      await logOperation(`Pushing batch ${batchNumber}/${totalBatches} (${batch.length} files)...`);
+
+      // We always push to 'main' and use 'main' as parent
+      // This works sequentially: Batch 2 will use the commit from Batch 1 as parent
+      await githubApp.pushChanges(username, repoName, commitMsg, batch, 'main', 'main');
+    }
+  };
+
+  if (baseFiles.length > 0) {
+    taskManager.updateTask(taskId, { step: 'pushing-base', message: `Pushing base template (${baseFiles.length} files)...` });
+    await pushInBatches(baseFiles, 'Initial commit from template');
+  }
+
+  // 2. Push Deltas (AI Changes)
+  taskManager.updateTask(taskId, { step: 'pushing-deltas', message: 'Pushing AI changes...' });
+
+  const deltas = await calculateDeltas(projectPath);
+  const deltaFiles = [];
+
+  // Handle Additions and Modifications
+  for (const filePath of [...deltas.additions, ...deltas.modifications]) {
+    try {
+      // Read from filesystem (working directory)
+      const contentBuffer = await fs.readFile(path.join(projectPath, filePath));
+      deltaFiles.push({
+        path: filePath,
+        content: contentBuffer.toString('base64'),
+        encoding: 'base64'
+      });
+    } catch (err) {
+      console.warn(`Warning: Could not read modified file ${filePath}: ${err.message}`);
+    }
+  }
+
+  // Handle Deletions
+  for (const filePath of deltas.deletions) {
+    deltaFiles.push({
+      path: filePath,
+      content: null // Signals deletion in our modified commitChanges
+    });
+  }
+
+  if (deltaFiles.length > 0) {
+    taskManager.updateTask(taskId, { step: 'pushing-deltas', message: `Pushing AI changes (${deltaFiles.length} files)...` });
+    await pushInBatches(deltaFiles, 'AI Implementation');
+  }
+
+  taskManager.updateTask(taskId, { step: 'completed', message: 'Codebase generation completed successfully' });
   console.log(`Codebase generation completed successfully! Repository: https://github.com/${username}/${repoName}`);
 }
 
-// Helper function to add all files from local directory to GitHub repo via API
-async function addFilesToRepoViaAPI(taskId, githubApp, owner, repo, localPath) {
+// Helper function to recursively get all files in a directory (kept for reference or other uses)
+async function getAllFiles(dirPath) {
   const fs = require('fs').promises;
   const path = require('path');
 
-  // Read all files recursively and add them via GitHub API
-  const allFiles = await getAllFiles(localPath);
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
 
-  // Group files by directories to handle them properly
-  for (const filePath of allFiles) {
-    const relativePath = path.relative(localPath, filePath);
+  const files = [];
 
-    try {
-      // Read file content
-      const content = await fs.readFile(filePath, 'utf8');
+  for (const entry of entries) {
+    const fullPath = path.join(dirPath, entry.name);
 
-      // Add file via GitHub API
-      await githubApp.addFile(owner, repo, relativePath, content, 'main', `Add file: ${relativePath}`);
+    if (entry.name === '.git') {
+      // Skip .git directories
+      continue;
+    }
 
-      // Update task status periodically
-      if (allFiles.indexOf(filePath) % 10 === 0) { // Update every 10 files
-        const progress = Math.round((allFiles.indexOf(filePath) / allFiles.length) * 100);
-        taskManager.updateTask(taskId, {
-          step: 'adding-files',
-          message: `Adding files via API... (${allFiles.indexOf(filePath) + 1}/${allFiles.length})`
-        });
-      }
-    } catch (error) {
-      console.error(`Error adding file ${relativePath}:`, error.message);
-      throw error;
+    if (entry.isDirectory()) {
+      const nestedFiles = await getAllFiles(fullPath);
+      files.push(...nestedFiles);
+    } else {
+      files.push(fullPath);
     }
   }
+
+  return files;
 }
 
 // Helper function to recursively get all files in a directory

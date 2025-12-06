@@ -5,7 +5,9 @@ FROM node:18-alpine
 WORKDIR /app
 
 # Install git and other required tools
-RUN apk add --no-cache git
+RUN apk add --no-cache git && \
+    git config --global user.email "bot@openspec.com" && \
+    git config --global user.name "OpenSpec Bot"
 
 # Copy package.json and package-lock.json (if available)
 COPY package*.json ./

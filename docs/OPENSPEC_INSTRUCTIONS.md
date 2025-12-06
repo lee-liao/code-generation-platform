@@ -107,3 +107,8 @@ The dashboard provides a graphical interface for the entire lifecycle:
     - **Progress Bar**: Real-time tracking of the generation process (Upload -> Edit -> AI -> Generate).
     - **Status Updates**: Live polling of background tasks.
 
+---
+
+
+
+

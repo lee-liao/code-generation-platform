@@ -207,8 +207,8 @@ class GitHubApp {
     }
   }
 
-  // Commit changes (often combined with addFile in practice)
-  async commitChanges(owner, repo, commitMessage, files, branch = 'main', parentBranch = 'main') {
+  // Push changes (add, commit, and push in one operation)
+  async pushChanges(owner, repo, commitMessage, files, branch = 'main', parentBranch = 'main') {
     const github = await this.getGitHubClientForOwner(owner);
 
     try {
@@ -221,9 +221,18 @@ class GitHubApp {
 
       const parentCommitSha = parentRef.object.sha;
 
-      // Create blob objects for each file
-      const treeItems = [];
-      for (const file of files) {
+      // Create blob objects for each file in parallel
+      const treeItems = await Promise.all(files.map(async (file) => {
+        // Handle deletions (content is null)
+        if (file.content === null) {
+          return {
+            path: file.path,
+            mode: '100644',
+            type: 'blob',
+            sha: null, // sha: null removes the file from the tree
+          };
+        }
+
         const blobResponse = await github.git.createBlob({
           owner,
           repo,
@@ -231,13 +240,13 @@ class GitHubApp {
           encoding: file.encoding || 'utf-8',
         });
 
-        treeItems.push({
+        return {
           path: file.path,
           mode: '100644', // File mode for normal file
           type: 'blob',
           sha: blobResponse.data.sha,
-        });
-      }
+        };
+      }));
 
       // Create tree object
       const treeResponse = await github.git.createTree({
@@ -265,23 +274,15 @@ class GitHubApp {
         force: false,
       });
 
-      console.log(`Changes committed to branch: ${branch}`);
+      console.log(`Changes pushed to branch: ${branch}`);
       return {
         commit: commitResponse.data,
         ref: refResponse.data,
       };
     } catch (error) {
-      console.error('Error committing changes:', error.message);
+      console.error('Error pushing changes:', error.message);
       throw error;
     }
-  }
-
-  // Push changes (this is handled by the commit process in GitHub API)
-  async pushChanges(owner, repo, branch = 'main') {
-    // In GitHub's API, pushing is part of committing - the changes are immediately reflected
-    // This method exists for conceptual completeness but doesn't perform a separate API call
-    console.log(`Changes are automatically 'pushed' when committed to branch: ${branch}`);
-    return { message: `Changes on branch ${branch} are live` };
   }
 
   // Create a pull request
