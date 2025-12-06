@@ -395,10 +395,7 @@ class GitHubApp {
 
   // Delete a repository using GitHub App installation token
   async deleteRepository(owner, repo) {
-    const installationId = process.env.GITHUB_INSTALLATION_ID;
-    if (!installationId) {
-      throw new Error('GITHUB_INSTALLATION_ID is not set in environment variables');
-    }
+    const installationId = this.getInstallationIdForOwner(owner);
 
     const github = await this.getGitHubClient(installationId);
 
